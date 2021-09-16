@@ -67,7 +67,8 @@ def G_grad_gaussian(x):
     return x
 
 def G_grad_bernoulli(x):
-    return 1/(1+torch.exp(-x))
+    # return torch.nn.functional.logsigmoid(x)
+    return 1./(1.+torch.exp(-x))
 
 def G_grad_continuous_bernoulli(x):
     return (torch.exp(-x)+x-1)/(x * (1-torch.exp(-x)))
@@ -94,8 +95,9 @@ def G_grad_fun(family):
 # g_invert is the inverse of the derivative of A.
 def g_invert_bernoulli(x):
     y = deepcopy(x)
-    y[y==0] = - np.inf
-    y[y==1] = np.inf
+    y = torch.log(y/(1-y))
+    # y[y==0] = - np.inf
+    # y[y==1] = np.inf
     return y
     # return - np_ag.log((1-x)/(x+saturation_eps))
 
@@ -172,32 +174,60 @@ def likelihood(family, data, theta):
     return h * torch.exp(exp_term - partition)
 
 
-def make_saturated_loading_cost(family, parameters, data, intercept=None):
+def make_saturated_loading_cost(family, parameters, data, max_value=np.inf):
     """
     Constructs the likelihood function for a given family.
     """
     loss = G_fun(family)
-    intercept = intercept if intercept is not None else torch.zeros(parameters.shape[1])
     
-    def likelihood(X):
+    def likelihood(X, intercept=None):
+        intercept = intercept if intercept is not None else torch.zeros(parameters.shape[1])
         theta = torch.matmul(parameters - intercept, torch.matmul(X, X.T)) + intercept
+        # c = torch.clip(loss(theta), -max_value, max_value)
         c = loss(theta)
-        c = torch.sum(c)
-        d = torch.sum(torch.multiply(data, theta))
+        c = torch.mean(c)
+        d = torch.mean(torch.multiply(data, theta))
         return c - d
     
     return likelihood
 
 
-def make_saturated_sample_proj_cost(family, parameters, data, intercept=None):
+def make_saturated_sample_proj_cost(family, parameters, data, max_value=np.inf):
     loss = G_fun(family)
-    intercept = intercept if intercept is not None else torch.zeros(parameters.shape[1])
     
-    def likelihood(X):
-        theta = torch.matmul(torch.matmul(X, X.T), parameters - intercept) + intercept
+    def likelihood(X, saturated_intercept=None, reconstruction_intercept=None):
+        saturated_intercept = saturated_intercept if saturated_intercept is not None else torch.zeros(parameters.shape[1])
+        reconstruction_intercept = reconstruction_intercept if reconstruction_intercept is not None else torch.zeros(parameters.shape[1])
+
+        theta = torch.matmul(torch.matmul(X, X.T), parameters - saturated_intercept) + reconstruction_intercept
         c = loss(theta)
-        c = torch.sum(c)
-        d = torch.sum(torch.multiply(data, theta))
+        c = torch.mean(c)
+        d = torch.mean(torch.multiply(data, theta))
+        return c - d
+    
+    return likelihood
+
+
+def make_saturated_subrotation_loading_cost(family, parameters, data, loadings, initial_intercept, max_value=np.inf):
+    """
+    Constructs the likelihood function for a given family.
+    """
+    loss = G_fun(family)
+    initial_intercept = initial_intercept if initial_intercept is not None else torch.zeros(parameters.shape[1])
+
+    def likelihood(X, intercept=None):
+        intercept = intercept if intercept is not None else torch.zeros(parameters.shape[1])
+        # theta = torch.matmul(parameters - intercept, torch.matmul(X, X.T)) + intercept
+
+        theta = parameters - initial_intercept
+        theta = torch.matmul(theta, loadings)
+        theta = torch.matmul(theta, X)
+        theta = torch.matmul(theta, X.T)
+        theta = torch.matmul(theta, loadings.T) + intercept
+
+        c = loss(theta)
+        c = torch.mean(c)
+        d = torch.mean(torch.multiply(data, theta))
         return c - d
     
     return likelihood

@@ -49,10 +49,10 @@ class GLMJIVE:
                 learning_rate=self.learning_rates[data_type]
             )
 
+            self.factor_models[data_type].compute_saturated_loadings(X[data_type])
             self.orthogonal_scores.append(
                 self.factor_models[data_type].compute_saturated_orthogonal_scores(X[data_type])
             )
-            self.factor_models[data_type].compute_saturated_loadings(X[data_type])
 
         # Align by computing joint scores
         self.M_ = torch.cat(self.orthogonal_scores, axis=1)
