@@ -143,7 +143,7 @@ class GLMPCA:
             joint_saturated_param_ = joint_saturated_param_ - self.saturated_intercept_
         joint_saturated_param_ = torch.matmul(scores, scores.T).matmul(joint_saturated_param_)
         if self.saturated_intercept_ is not None:
-            joint_saturated_param_ = joint_saturated_param_ + self.saturated_intercept_
+            joint_saturated_param_ = joint_saturated_param_ + self.reconstruction_intercept_
         self.X_reconstruct_view_ = G_grad_fun(self.family)(joint_saturated_param_)
 
         return self.X_reconstruct_view_
@@ -181,16 +181,7 @@ class GLMPCA:
 
 
     def project_cell_view(self, X):
-        # if self.sample_projection:
-        #     saturated_params = self.compute_saturated_params(X)
-        #     saturated_param_projection_ = saturated_params.matmul(self.saturated_loadings_)
-        #     saturated_param_projection_ = saturated_params.matmul(self.saturated_loadings_)
-        #     saturated_param_projection_, _, _ = torch.linalg.svd(saturated_param_projection_)
-        #     projected_saturated_param_ = saturated_param_projection_.matmul(saturated_param_projection_.T).matmul(saturated_params)
-        #     projected_saturated_param_ = projected_saturated_param_ + self.reconstruction_intercept_
-        # else:
         projected_saturated_param_ = self.compute_projected_saturated_params(X, with_reconstruction_intercept=True)
-        
         return G_grad_fun(self.family)(projected_saturated_param_)
 
 

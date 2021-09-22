@@ -3,6 +3,7 @@ import numpy as np
 from copy import deepcopy
 from .GLMPCA import GLMPCA
 from .difference_GLMPCA import difference_GLMPCA
+from .residualGLMPCA import ResidualGLMPCA
 from .generalized_SVD import generalized_SVD
 
 class GLMJIVE:
@@ -70,12 +71,14 @@ class GLMJIVE:
                 return_tensor=True
             )
 
+        # Stop if required
         if no_alignment:
             return True
 
         # Initialize models
         self.joint_models = {k:self.factor_models[k].clone_empty_GLMPCA() for k in X}
         self.individual_models = {k:difference_GLMPCA.clone_from_GLMPCA(self.factor_models[k]) for k in X}
+        self.noise_models = {k:ResidualGLMPCA.clone_from_GLMPCA(self.factor_models[k]) for k in X}
 
         if self.alignment_method in ['svd', 'SVD']:
             # Compute joint scores like in AJIVE
@@ -87,28 +90,47 @@ class GLMJIVE:
 
             # Compute rotation matrices per data-type
             print('START JOINT MODEL', flush=True)
-            # self.joint_models[self.data_types[0]].saturated_loadings_rot_ = self.M_svd_[2][:self.n_joint,:self.factor_models[self.data_types[0]].n_pc].T.matmul(torch.diag(1./self.M_svd_[1][:self.n_joint]))
-            # self.joint_models[self.data_types[0]].saturated_loadings_ = self.factor_models[self.data_types[0]].saturated_loadings_.matmul(
-            #     self.joint_models[self.data_types[0]].saturated_loadings_rot_ 
-            # )
-
-            # self.joint_models[self.data_types[1]].saturated_loadings_rot_ = self.M_svd_[2][:self.n_joint,self.factor_models[self.data_types[0]].n_pc:].T.matmul(torch.diag(1./self.M_svd_[1][:self.n_joint]))
-            # self.joint_models[self.data_types[1]].saturated_loadings_ = self.factor_models[self.data_types[1]].saturated_loadings_.matmul(
-            #     self.joint_models[self.data_types[1]].saturated_loadings_rot_
-            # )
-            # V_1 = V_M[:self.factor_models[self.data_types[0]].n_pc]
-            self.joint_models[self.data_types[0]].saturated_loadings_ = self.factor_models[self.data_types[0]].saturated_loadings_.matmul(
-                self.factor_models[self.data_types[0]].saturated_scores_.T.matmul(self.joint_scores_)
-            )
-
-            # V_2 = V_M[self.factor_models[self.data_types[0]].n_pc:]
-            self.joint_models[self.data_types[1]].saturated_loadings_ = self.factor_models[self.data_types[1]].saturated_loadings_.matmul(
-                self.factor_models[self.data_types[1]].saturated_scores_.T.matmul(self.joint_scores_)
-            )
+            for d in self.data_types:
+                self.joint_models[d].n_pc = self.n_joint
+                self.joint_models[d].saturated_loadings_ = self.factor_models[d].saturated_loadings_.matmul(
+                    self.factor_models[d].saturated_scores_.T.matmul(self.joint_scores_)
+                )
+                self.joint_models[d].compute_reconstructed_data(
+                    X[d], 
+                    self.joint_scores_
+                )
 
             # Set up individual
-            pass
             print('START INDIVIDUAL MODEL', flush=True)
+            for d in self.data_types:
+                indiv_matrix = torch.Tensor(np.identity(self.joint_scores_.shape[0])) 
+                indiv_matrix = indiv_matrix - self.joint_scores_.matmul(self.joint_scores_.T)
+                indiv_matrix, _, _ = torch.linalg.svd(indiv_matrix)
+                indiv_matrix = indiv_matrix[:,:self.factor_models[d].n_pc - self.n_joint]
+                self.individual_models[d].saturated_loadings_ = self.factor_models[d].saturated_loadings_.matmul(
+                    self.factor_models[d].saturated_scores_.T.matmul(indiv_matrix)
+                )
+
+                self.individual_models[d].fill_GLMPCA_instances(
+                    self.factor_models[d], 
+                    self.joint_models[d]
+                )
+                del indiv_matrix
+
+
+            # Set up individual
+            print('START NOISE MODEL', flush=True)
+            for d in self.data_types:
+                noise_matrix = torch.Tensor(np.identity(X[d].shape[1])) 
+                noise_matrix = noise_matrix - self.factor_models[d].saturated_loadings_.matmul(self.factor_models[d].saturated_loadings_.T)
+                noise_matrix, _, _ = torch.linalg.svd(noise_matrix)
+                noise_matrix = noise_matrix[:,self.factor_models[d].n_pc:]
+                self.noise_models[d].saturated_loadings_ = noise_matrix
+
+                self.noise_models[d].fill_GLMPCA_instances(
+                    self.factor_models[d]
+                )
+                del noise_matrix
 
         elif self.alignment_method in ['gsvd', 'generalized', 'GSVD']:
             self.joint_scores_ = self.M_svd_['Q'][:,:self.n_joint]
@@ -117,17 +139,6 @@ class GLMJIVE:
             # Compute rotation matrices per data-type
             print('START JOINT MODEL', flush=True)
             self.joint_models[self.data_types[0]].saturated_loadings_ = self.factor_models[self.data_types[0]].saturated_loadings_.clone().detach()
-            # self.joint_models[self.data_types[0]].saturated_loadings_rot_ = self.M_svd_['U1'].matmul(torch.linalg.pinv(self.M_svd_['S1']).T).matmul(self.M_svd_['W'].T).matmul(torch.linalg.pinv(self.M_svd_['D']).T)[:,:self.n_joint]
-            # self.joint_models[self.data_types[0]].saturated_loadings_rot_ = torch.matmul(
-            #     self.M_svd_['U1'],
-            #     self.M_svd_['S1']
-            # ).matmul(
-            #     self.M_svd_['W'].T
-            # ).matmul(
-            #     self.M_svd_['D']#torch.cat([self.M_svd_['D'], torch.zeros(self.M_svd_['D'].shape[0], self.M_svd_['Q'].shape[1] - self.M_svd_['D'].shape[0])], axis=1)
-            # )
-            # self.joint_models[self.data_types[0]].saturated_loadings_rot_complete = self.joint_models[self.data_types[0]].saturated_loadings_rot_.clone().detach()
-            # self.joint_models[self.data_types[0]].saturated_loadings_rot_ = torch.linalg.pinv(self.joint_models[self.data_types[0]].saturated_loadings_rot_)[:self.n_joint]
             self.joint_models[self.data_types[0]].saturated_loadings_rot_ = torch.matmul(
                 torch.linalg.pinv(self.M_svd_['D']),
                 self.M_svd_['W']
@@ -141,17 +152,6 @@ class GLMJIVE:
             )
 
             self.joint_models[self.data_types[1]].saturated_loadings_ = self.factor_models[self.data_types[1]].saturated_loadings_.clone().detach()
-            # self.joint_models[self.data_types[1]].saturated_loadings_rot_ = self.M_svd_['U2'].matmul(torch.linalg.pinv(self.M_svd_['S2']).T).matmul(self.M_svd_['W'].T).matmul(torch.linalg.pinv(self.M_svd_['D']).T)[:,:self.n_joint]       
-            # self.joint_models[self.data_types[1]].saturated_loadings_rot_ = torch.matmul(
-            #     self.M_svd_['U2'],
-            #     self.M_svd_['S2']
-            # ).matmul(
-            #     self.M_svd_['W'].T
-            # ).matmul(
-            #     self.M_svd_['D']# torch.cat([self.M_svd_['D'], torch.zeros(self.M_svd_['D'].shape[0], self.M_svd_['Q'].shape[1] - self.M_svd_['D'].shape[0])], axis=1)
-            # )
-            # self.joint_models[self.data_types[1]].saturated_loadings_rot_complete = self.joint_models[self.data_types[1]].saturated_loadings_rot_.clone().detach()
-            # self.joint_models[self.data_types[1]].saturated_loadings_rot_ = torch.linalg.pinv(self.joint_models[self.data_types[1]].saturated_loadings_rot_)[:self.n_joint]
             self.joint_models[self.data_types[1]].saturated_loadings_rot_ = torch.matmul(
                 torch.linalg.pinv(self.M_svd_['D']),
                 self.M_svd_['W']
@@ -173,25 +173,6 @@ class GLMJIVE:
             self.individual_models[self.data_types[1]].saturated_loadings_ = self.factor_models[self.data_types[1]].saturated_loadings_.matmul(
                 self.M_svd_['U2'].matmul(torch.linalg.pinv(self.M_svd_['S2']).T).matmul(self.M_svd_['W'].T).matmul(torch.linalg.pinv(self.M_svd_['D']).T)[:,self.n_joint:]
             )
-            
-        for data_type in X:
-            self.joint_models[data_type].n_pc = self.n_joint
-            self.joint_models[data_type].compute_reconstructed_data(
-                X[data_type], 
-                self.joint_scores_
-            )
-            self.joint_models[data_type].sample_projection = True
-
-        # Compute associated individual factors        
-        
-        for data_type in X:
-            self.individual_models[data_type].n_pc = self.individual_models[data_type].n_pc - self.n_joint
-            self.individual_models[data_type].fill_GLMPCA_instances(self.factor_models[data_type], self.joint_models[data_type])
-            # self.individual_models[data_type].compute_reconstructed_data(
-            #     X[data_type], 
-            #     self.individual_scores_
-            # )
-            # self.individual_models[data_type].sample_projection = True
 
         return True
 
@@ -205,6 +186,8 @@ class GLMJIVE:
             return self.individual_models[data_source].project_low_rank(X)
         elif data_type == 'joint':
             return self.joint_models[data_source].project_low_rank(X)
+        elif data_type == 'noise':
+            return self.noise_models[data_source].project_low_rank(X)
 
 
     def project_cell_view(self, X, data_source, data_type):
@@ -217,4 +200,4 @@ class GLMJIVE:
         elif data_type == 'joint':
             return self.joint_models[data_source].project_cell_view(X)
         elif data_type == 'noise':
-            return X - self.project_cell_view(X, data_source, 'joint') - self.project_cell_view(X, data_source, 'individual')
+            return self.noise_models[data_source].project_cell_view(X)
