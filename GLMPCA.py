@@ -18,9 +18,6 @@ def _create_saturated_loading_optim(parameters, data, n_pc, family, learning_rat
         manifold=mnn.Euclidean(parameters.shape[1])
     )
     cost = make_saturated_loading_cost(family, parameters, data, max_value)
-    # optimizer = moptim.rAdagrad(params = [loadings, intercept], lr=learning_rate)
-    # optimizer = moptim.ConjugateGradient(params = [loadings, intercept], lr=learning_rate)
-    # optimizer = moptim.rASA(params = [loadings, intercept], lr=learning_rate)
     optimizer = moptim.rSGD(params = [loadings, intercept], lr=learning_rate)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.9)
 
@@ -51,7 +48,6 @@ def _create_saturated_scores_projection_optim(parameters, data, n_pc, family, le
 
 def _create_subrotation_loading_optim(parameters, data, loadings, initial_intercept, n_pc, family, learning_rate, max_value=np.inf):
     subrotation = mnn.Parameter(manifold=mnn.Stiefel(loadings.shape[1], n_pc))
-    # subrotation = mnn.Parameter(manifold=mnn.Euclidean(loadings.shape[1], n_pc))
     intercept = mnn.Parameter(
         data=torch.mean(parameters, axis=0),
         manifold=mnn.Euclidean(parameters.shape[1])
@@ -88,6 +84,9 @@ class GLMPCA:
         # reconstruction_intercept: after projecting
         self.reconstruction_intercept_ = None
 
+        # Whether to perform sample or gene projection
+        self.sample_projection = False
+
 
     def compute_saturated_loadings(self, X):
         """
@@ -100,6 +99,8 @@ class GLMPCA:
         self.saturated_loadings_, self.saturated_intercept_ = self._saturated_loading_iter(self.saturated_param_, X)
         self.saturated_intercept_ = self.saturated_intercept_.clone().detach()
         self.reconstruction_intercept_ = self.saturated_intercept_.clone().detach()
+        self.saturated_param_ = self.saturated_param_ - self.saturated_intercept_
+        self.sample_projection = False
 
         return self.saturated_loadings_
 
@@ -115,7 +116,6 @@ class GLMPCA:
         self.saturated_param_ = g_invertfun(self.family)(X)
         self.saturated_param_ = torch.clip(self.saturated_param_, -self.max_param, self.max_param)
 
-        # projected_saturated_param_ = self.compute_projected_saturated_params(X, with_reconstruction_intercept=False)
         projected_saturated_param_ = self.saturated_param_ - self.saturated_intercept_
         projected_orthogonal_scores_ = projected_saturated_param_.matmul(self.saturated_loadings_)
         projected_orthogonal_scores_ = torch.linalg.svd(projected_orthogonal_scores_, full_matrices=False)
@@ -123,47 +123,10 @@ class GLMPCA:
         if correct_loadings:
             self.saturated_loadings_ = torch.matmul(self.saturated_loadings_, projected_orthogonal_scores_[2].T)
             self.saturated_loadings_ = torch.matmul(self.saturated_loadings_, torch.diag(1./projected_orthogonal_scores_[1]))
-
-        # self.learning_rate_ = self.initial_learning_rate_
-        # self.saturated_scores_, self.saturated_intercept_ = self._saturated_score_iter(self.saturated_param_, X)
-        # self.saturated_intercept_ = self.saturated_intercept_.clone().detach()
-        # self.reconstruction_intercept_ = self.saturated_intercept_.clone().detach()
+            self.sample_projection = True
 
         return self.saturated_scores_
 
-
-    # def compute_equivalent_loadings(self, X, scores, loadings=None):
-    #     """
-    #     Given some orthogonal scores, compute low-rankfeature-level orthogonal projection.
-    #     Additional loadings can be added to constrain the projection to be on these directions (saturated
-    #     parameters are first projected on them).
-    #     """
-
-    #     # Saturated params
-    #     saturated_param_ = g_invertfun(self.family)(X)
-    #     saturated_param_ = torch.clip(saturated_param_, -self.max_param, self.max_param)
-
-    #     # Compute associated cell view
-    #     joint_saturated_param_ = deepcopy(saturated_param_.detach())
-    #     if self.saturated_intercept_ is not None:
-    #         joint_saturated_param_ = joint_saturated_param_ - self.saturated_intercept_
-    #     joint_saturated_param_ = torch.matmul(scores, scores.T).matmul(joint_saturated_param_)
-    #     if self.saturated_intercept_ is not None:
-    #         joint_saturated_param_ = joint_saturated_param_ + self.saturated_intercept_
-    #     self.X_reconstruct_view_ = G_grad_fun(self.family)(joint_saturated_param_)
-
-    #     # Compute associated loadings
-    #     self.learning_rate_ = self.initial_learning_rate_
-    #     self.saturated_loadings_, self.saturated_intercept_, self.reconstruction_intercept_ = self._saturated_subrotation_iter(
-    #         saturated_param_, 
-    #         self.X_reconstruct_view_.detach(),
-    #         loadings,
-    #         self.saturated_intercept_
-    #     )
-    #     self.saturated_intercept_ = self.saturated_intercept_.clone().detach()
-    #     self.reconstruction_intercept_ = self.reconstruction_intercept_.clone().detach()
-
-    #     return self.saturated_loadings_
 
     def compute_reconstructed_data(self, X, scores):
         """
@@ -194,22 +157,40 @@ class GLMPCA:
         # Project on loadings
         saturated_param_ = saturated_param_ - self.saturated_intercept_
         saturated_param_ = torch.matmul(saturated_param_, self.saturated_loadings_)
-        saturated_param_ = torch.matmul(saturated_param_, self.saturated_loadings_.T)
+        saturated_param_ = torch.matmul(saturated_param_, torch.linalg.pinv(self.saturated_loadings_))
         if with_reconstruction_intercept:
             saturated_param_ = saturated_param_ + self.reconstruction_intercept_
 
         return saturated_param_.clone().detach()
 
 
-    def project_low_rank(self, X):
-        projected_saturated_param_ = self.compute_projected_saturated_params(X, with_reconstruction_intercept=False)
-        return projected_saturated_param_.matmul(self.saturated_loadings_)
-        # return self._saturated_score_projection_iter(projected_saturated_param_.detach(), X)
+    def compute_saturated_params(self, X):
+        # Compute saturated params
+        saturated_param_ = g_invertfun(self.family)(X)
+        saturated_param_ = torch.clip(saturated_param_, -self.max_param, self.max_param)
 
+        # Project on loadings
+        saturated_param_ = saturated_param_ - self.saturated_intercept_
+
+        return saturated_param_.clone().detach()
+
+
+    def project_low_rank(self, X):
+        saturated_params = self.compute_saturated_params(X)
+        return saturated_params.matmul(self.saturated_loadings_)
 
 
     def project_cell_view(self, X):
+        # if self.sample_projection:
+        #     saturated_params = self.compute_saturated_params(X)
+        #     saturated_param_projection_ = saturated_params.matmul(self.saturated_loadings_)
+        #     saturated_param_projection_ = saturated_params.matmul(self.saturated_loadings_)
+        #     saturated_param_projection_, _, _ = torch.linalg.svd(saturated_param_projection_)
+        #     projected_saturated_param_ = saturated_param_projection_.matmul(saturated_param_projection_.T).matmul(saturated_params)
+        #     projected_saturated_param_ = projected_saturated_param_ + self.reconstruction_intercept_
+        # else:
         projected_saturated_param_ = self.compute_projected_saturated_params(X, with_reconstruction_intercept=True)
+        
         return G_grad_fun(self.family)(projected_saturated_param_)
 
 
