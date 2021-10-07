@@ -193,19 +193,18 @@ class GLMPCA:
             else:
                 r_moment_coef = torch.pow(torch.mean(X, axis=0), 2) / (torch.var(X, axis=0) - torch.mean(X, axis=0))
 
-            eps = 1e-7
-            r_params = r_moment_coef.clone()
-            theta = - torch.rand(size=X.shape)
-
-            r_params.requires_grad = True
-            theta.requires_grad = True
+            q_params = torch.log(r_moment_coef.clone())
+            upsilon =  torch.rand(size=X.shape)
+            q_params.requires_grad = True
+            upsilon.requires_grad = True
+            
             if exp_family_params is not None and 'r' in exp_family_params:
                 optimizer = torch.optim.Adadelta([theta], lr=self.nb_params['theta_lr'])
             else:
                 optimizer = torch.optim.Adadelta(
                     [
-                        {'params':r_params, 'lr': self.nb_params['r_lr']},
-                        {'params':theta, 'lr': self.nb_params['theta_lr']}
+                        {'params':q_params, 'lr': 250.},
+                        {'params':upsilon, 'lr': 250.}
                     ]
                 )
 
@@ -216,15 +215,20 @@ class GLMPCA:
                 if iter_descent % 250 == 0:
                     print(iter_descent)
                 optimizer.zero_grad()
+
+                # Reparametrization
+                theta = - torch.log(1+torch.exp(-upsilon))
+                r_params = torch.exp(q_params)
+
                 lk = torch.sum(log_likelihood('nb', X, theta, params={'r':r_params}))
                 lk.backward()
                 optimizer.step()
                 lr_scheduler.step()
-                with torch.no_grad():
-                    theta.clamp_max_(-eps)
-                    r_params.clamp_min_(eps)
                 
                 self._saturated_params_nb_loss.append(lk.detach())
+
+            saturated_param_ = - torch.log(1+torch.exp(-upsilon)).detach()
+            r_params = torch.exp(q_params).detach()
 
             if save_family_params:
                 if self.exp_family_params is None:
