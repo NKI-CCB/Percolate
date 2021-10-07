@@ -34,6 +34,73 @@ from sklearn.preprocessing import StandardScaler
 
 saturation_eps = 10**-10
 
+# Compute natural parameters from the parametrization used.
+def nu_gaussian(x, params=None):
+    return x
+
+def nu_bernoulli(x, params=None):
+    return x
+
+def nu_continuous_bernoulli(x, params=None):
+    return x
+
+def nu_poisson(x, params=None):
+    return x
+
+def nu_multinomial(x, params=None):
+    return x
+
+def nu_negative_binomial(x, params=None):
+    return 1 / (1+torch.exp(-x))
+
+def nu_fun(family):
+    if family == 'bernoulli':
+        return nu_bernoulli
+    elif family == 'continuous_bernoulli':
+        return nu_continuous_bernoulli
+    elif family == 'poisson':
+        return nu_poisson
+    elif family == 'gaussian':
+        return nu_gaussian
+    elif family == 'multinomial':
+        return nu_multinomial
+    elif family.lower() in ['negative_binomial', 'nb']:
+        return nu_negative_binomial
+
+
+# Function that computes the parametrization of the natural parameters.
+def nu_parametrization_gaussian(x, params=None):
+    return x
+
+def nu_parametrization_bernoulli(x, params=None):
+    return x
+
+def nu_parametrization_continuous_bernoulli(x, params=None):
+    return x
+
+def nu_parametrization_poisson(x, params=None):
+    return x
+
+def nu_parametrization_multinomial(x, params=None):
+    return x
+
+def nu_parametrization_negative_binomial(x, params=None):
+    return - torch.log(x/(1-x))
+
+def nu_parametrization_fun(family):
+    if family == 'bernoulli':
+        return nu_parametrization_bernoulli
+    elif family == 'continuous_bernoulli':
+        return nu_parametrization_continuous_bernoulli
+    elif family == 'poisson':
+        return nu_parametrization_poisson
+    elif family == 'gaussian':
+        return nu_parametrization_gaussian
+    elif family == 'multinomial':
+        return nu_parametrization_multinomial
+    elif family.lower() in ['negative_binomial', 'nb']:
+        return nu_parametrization_negative_binomial
+
 # Functions G
 def G_gaussian(x, params=None):
     return torch.square(x) / 2
@@ -212,15 +279,17 @@ def log_h_fun(family):
 # Compute likelihood
 def likelihood(family, data, theta, params=None):
     h = h_fun(family)(data, params)
-    exp_term = torch.multiply(theta, data)
-    partition =  G_fun(family)(theta, params)
+    nu = nu_fun(family)(data, params)
+    exp_term = torch.multiply(nu, data)
+    partition =  G_fun(family)(nu, params)
     return h * torch.exp(exp_term - partition)
 
 
 def log_likelihood(family, data, theta, params=None):
     h = log_h_fun(family)(data, params)
-    exp_term = torch.multiply(theta, data)
-    partition =  G_fun(family)(theta, params)
+    nu = nu_fun(family)(data, params)
+    exp_term = torch.multiply(nu, data)
+    partition =  G_fun(family)(nu, params)
     return - h - exp_term + partition
 
 def make_saturated_loading_cost(family, parameters, data, max_value=np.inf, params=None):
@@ -228,14 +297,15 @@ def make_saturated_loading_cost(family, parameters, data, max_value=np.inf, para
     Constructs the likelihood function for a given family.
     """
     loss = G_fun(family)
+    nu_mapping = nu_fun(family)
     
     def likelihood(X, intercept=None):
         intercept = intercept if intercept is not None else torch.zeros(parameters.shape[1])
-        theta = torch.matmul(parameters - intercept, torch.matmul(X, X.T)) + intercept
-        # c = torch.clip(loss(theta), -max_value, max_value)
-        c = loss(theta, params)
+        nu = torch.matmul(parameters - intercept, torch.matmul(X, X.T)) + intercept
+        nu = nu_mapping(nu, params)
+        c = loss(nu, params)
         c = torch.mean(c)
-        d = torch.mean(torch.multiply(data, theta))
+        d = torch.mean(torch.multiply(data, nu))
         return c - d
     
     return likelihood
@@ -243,15 +313,17 @@ def make_saturated_loading_cost(family, parameters, data, max_value=np.inf, para
 
 def make_saturated_sample_proj_cost(family, parameters, data, max_value=np.inf, params=None):
     loss = G_fun(family)
+    nu_mapping = nu_mapping(family)
     
     def likelihood(X, saturated_intercept=None, reconstruction_intercept=None):
         saturated_intercept = saturated_intercept if saturated_intercept is not None else torch.zeros(parameters.shape[1])
         reconstruction_intercept = reconstruction_intercept if reconstruction_intercept is not None else torch.zeros(parameters.shape[1])
 
-        theta = torch.matmul(torch.matmul(X, X.T), parameters - saturated_intercept) + reconstruction_intercept
-        c = loss(theta, params)
+        nu = torch.matmul(torch.matmul(X, X.T), parameters - saturated_intercept) + reconstruction_intercept
+        nu = nu_mapping(nu, params)
+        c = loss(nu, params)
         c = torch.mean(c)
-        d = torch.mean(torch.multiply(data, theta))
+        d = torch.mean(torch.multiply(data, nu))
         return c - d
     
     return likelihood

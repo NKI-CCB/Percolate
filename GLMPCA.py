@@ -4,6 +4,7 @@
 import numpy as np
 import torch
 import torch.optim
+import matplotlib.pyplot as plt
 from copy import deepcopy
 from joblib import Parallel, delayed
 from .exponential_family import *
@@ -24,13 +25,13 @@ def _create_saturated_loading_optim(parameters, data, n_pc, family, learning_rat
     return optimizer, cost, loadings, intercept, lr_scheduler
 
 
-def _create_saturated_scores_optim(parameters, data, n_pc, family, learning_rate, max_value=np.inf):
+def _create_saturated_scores_optim(parameters, data, n_pc, family, learning_rate, max_value=np.inf, exp_family_params=None):
     scores = mnn.Parameter(manifold=mnn.Stiefel(parameters.shape[0], n_pc))
     intercept = mnn.Parameter(
         data=torch.mean(parameters, axis=0),
         manifold=mnn.Euclidean(parameters.shape[1])
     )
-    cost = make_saturated_sample_proj_cost(family, parameters, data, max_value)
+    cost = make_saturated_sample_proj_cost(family, parameters, data, max_value, exp_family_params)
     optimizer = moptim.rSGD(params = [scores, intercept], lr=learning_rate)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.9)
 
@@ -94,7 +95,7 @@ class GLMPCA:
             print('SET DEFAULT PARAMETERS FOR NEGATIVE BINOMIAL', flush=True)
             self.nb_params = {
                 'r_lr': 1000.,
-                'theta_lr': 50.,
+                'theta_lr': 250.,
                 'epochs': 1000
             }
 
@@ -130,7 +131,7 @@ class GLMPCA:
         if self.saturated_loadings_ is None:
             self.compute_saturated_loadings(X)
 
-        self.saturated_param_ = g_invertfun(self.family)(X)
+        self.saturated_param_ = g_invertfun(self.family)(X, self.exp_family_params)
         self.saturated_param_ = torch.clip(self.saturated_param_, -self.max_param, self.max_param)
 
         projected_saturated_param_ = self.saturated_param_ - self.saturated_intercept_
@@ -191,22 +192,28 @@ class GLMPCA:
             if exp_family_params is not None and 'r' in exp_family_params:
                 r_moment_coef = exp_family_params['r']
             else:
-                r_moment_coef = torch.pow(torch.mean(X, axis=0), 2) / (torch.var(X, axis=0) - torch.mean(X, axis=0))
+                r_moment_coef = torch.ones(X.shape[1])
+                # r_moment_coef = torch.pow(torch.mean(X, axis=0), 2) / (torch.var(X, axis=0) - torch.mean(X, axis=0))
 
-            q_params = torch.log(r_moment_coef.clone())
-            upsilon =  torch.rand(size=X.shape)
-            q_params.requires_grad = True
+            # q_params = torch.log(r_moment_coef.clone())
+            upsilon =  20 * (torch.rand(size=X.shape)-.5)
             upsilon.requires_grad = True
             
             if exp_family_params is not None and 'r' in exp_family_params:
-                optimizer = torch.optim.Adadelta([theta], lr=self.nb_params['theta_lr'])
+                q_params = torch.log(r_moment_coef)
+                q_params.requires_grad = True
+                optimizer = torch.optim.Adadelta([upsilon], lr=10**5)
+                refit = False
             else:
+                q_params = 10 * (torch.rand(size=X.shape[1:]))
+                q_params.requires_grad = True
                 optimizer = torch.optim.Adadelta(
                     [
-                        {'params':q_params, 'lr': 250.},
-                        {'params':upsilon, 'lr': 250.}
+                        {'params':q_params, 'lr': 500.},
+                        {'params':upsilon, 'lr': 500.}
                     ]
                 )
+                refit = True
 
             lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.9)
 
@@ -216,19 +223,34 @@ class GLMPCA:
                     print(iter_descent)
                 optimizer.zero_grad()
 
-                # Reparametrization
-                theta = - torch.log(1+torch.exp(-upsilon))
+                # Reparametrization of r
                 r_params = torch.exp(q_params)
 
-                lk = torch.sum(log_likelihood('nb', X, theta, params={'r':r_params}))
+                lk = torch.sum(log_likelihood('nb', X, upsilon, params={'r':r_params}))
                 lk.backward()
                 optimizer.step()
                 lr_scheduler.step()
+
+                if exp_family_params is not None and 'r' in exp_family_params:
+                    print(upsilon[0])
                 
                 self._saturated_params_nb_loss.append(lk.detach())
 
-            saturated_param_ = - torch.log(1+torch.exp(-upsilon)).detach()
+            plt.plot(self._saturated_params_nb_loss)
+            plt.show()
+
+            saturated_param_ = upsilon.detach()
             r_params = torch.exp(q_params).detach()
+
+            # Refit loadings if dispersion was set here
+            # if refit:
+            #     return self.compute_saturated_params(
+            #         X, 
+            #         with_intercept=with_intercept, 
+            #         exp_family_params={'r': r_params}, 
+            #         save_family_params=save_family_params
+            #     )
+
 
             if save_family_params:
                 if self.exp_family_params is None:
@@ -292,6 +314,7 @@ class GLMPCA:
             self.max_param,
             self.exp_family_params
         )
+        self.loadings_elements_optim_ = [_optimizer, _cost, _loadings, _intercept, _lr_scheduler]
         
         self.loadings_learning_scores_ = []
         self.loadings_learning_rates_ = []
@@ -331,7 +354,8 @@ class GLMPCA:
             self.n_pc,
             self.family,
             self.learning_rate_,
-            self.max_param
+            self.max_param,
+            self.exp_family_params
         )
         
         self.scores_learning_scores_ = []
