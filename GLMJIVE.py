@@ -121,7 +121,7 @@ class GLMJIVE:
             # Set up individual
             print('START NOISE MODEL', flush=True)
             for d in self.data_types:
-                noise_matrix = torch.Tensor(np.identity(X[d].shape[1])) 
+                noise_matrix = torch.Tensor(np.identity(self.factor_models[d].saturated_loadings_.shape[0])) 
                 noise_matrix = noise_matrix - self.factor_models[d].saturated_loadings_.matmul(self.factor_models[d].saturated_loadings_.T)
                 noise_matrix, _, _ = torch.linalg.svd(noise_matrix)
                 noise_matrix = noise_matrix[:,self.factor_models[d].n_pc:]

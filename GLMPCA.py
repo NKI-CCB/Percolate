@@ -2,14 +2,17 @@
 
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.optim
 import matplotlib.pyplot as plt
 from copy import deepcopy
 from joblib import Parallel, delayed
-from .exponential_family import *
 import mctorch.nn as mnn
 import mctorch.optim as moptim
+
+from .negative_binomial_routines import compute_dispersion
+from .exponential_family import *
 
 
 def _create_saturated_loading_optim(parameters, data, n_pc, family, learning_rate, max_value=np.inf, exp_family_params=None):
@@ -18,9 +21,13 @@ def _create_saturated_loading_optim(parameters, data, n_pc, family, learning_rat
         data=torch.mean(parameters, axis=0),
         manifold=mnn.Euclidean(parameters.shape[1])
     )
-    cost = make_saturated_loading_cost(family, parameters, data, max_value, exp_family_params)
-    optimizer = moptim.rSGD(params = [loadings, intercept], lr=learning_rate)
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.9)
+    params = deepcopy(exp_family_params)
+    if family.lower() in ['negative_binomial', 'nb']:
+        params['r'] = params['r'][params['gene_filter']]
+    cost = make_saturated_loading_cost(family, parameters, data, max_value, params)
+    # optimizer = moptim.ConjugateGradient(params = [loadings, intercept], lr=learning_rate)
+    optimizer = moptim.rAdagrad(params = [loadings, intercept], lr=learning_rate)
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
 
     return optimizer, cost, loadings, intercept, lr_scheduler
 
@@ -31,8 +38,12 @@ def _create_saturated_scores_optim(parameters, data, n_pc, family, learning_rate
         data=torch.mean(parameters, axis=0),
         manifold=mnn.Euclidean(parameters.shape[1])
     )
-    cost = make_saturated_sample_proj_cost(family, parameters, data, max_value, exp_family_params)
-    optimizer = moptim.rSGD(params = [scores, intercept], lr=learning_rate)
+    params = deepcopy(exp_family_params)
+    if family.lower() in ['negative_binomial', 'nb']:
+        params['r'] = params['r'][params['gene_filter']]
+    cost = make_saturated_sample_proj_cost(family, parameters, data, max_value, params)
+    # optimizer = moptim.ConjugateGradient(params = [scores, intercept], lr=learning_rate)
+    optimizer = moptim.rAdagrad(params = [scores, intercept], lr=learning_rate)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.9)
 
     return optimizer, cost, scores, intercept, lr_scheduler
@@ -41,7 +52,8 @@ def _create_saturated_scores_optim(parameters, data, n_pc, family, learning_rate
 def _create_saturated_scores_projection_optim(parameters, data, n_pc, family, learning_rate, max_value=np.inf):
     scores = mnn.Parameter(manifold=mnn.Stiefel(parameters.shape[0], n_pc))
     cost = make_saturated_sample_proj_cost(family, parameters, data, max_value)
-    optimizer = moptim.rSGD(params=[scores], lr=learning_rate)
+    # optimizer = moptim.ConjugateGradient(params=[scores], lr=learning_rate)
+    optimizer = moptim.rAdagrad(params=[scores], lr=learning_rate)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.9)
 
     return optimizer, cost, scores, lr_scheduler
@@ -114,7 +126,10 @@ class GLMPCA:
         )
 
         self.learning_rate_ = self.initial_learning_rate_
-        self.saturated_loadings_, self.saturated_intercept_ = self._saturated_loading_iter(self.saturated_param_, X)
+        self.saturated_loadings_, self.saturated_intercept_ = self._saturated_loading_iter(
+            self.saturated_param_, 
+            X[:,self.exp_family_params['gene_filter']] if self.family.lower() in ['negative_binomial', 'nb'] else X
+        )
         self.saturated_intercept_ = self.saturated_intercept_.clone().detach()
         self.reconstruction_intercept_ = self.saturated_intercept_.clone().detach()
         self.saturated_param_ = self.saturated_param_ - self.saturated_intercept_
@@ -131,11 +146,14 @@ class GLMPCA:
         if self.saturated_loadings_ is None:
             self.compute_saturated_loadings(X)
 
-        self.saturated_param_ = g_invertfun(self.family)(X, self.exp_family_params)
-        self.saturated_param_ = torch.clip(self.saturated_param_, -self.max_param, self.max_param)
+        self.saturated_param_ = self.compute_saturated_params(
+            X, 
+            with_intercept=True, 
+            exp_family_params=self.exp_family_params,
+            save_family_params=False
+        )
 
-        projected_saturated_param_ = self.saturated_param_ - self.saturated_intercept_
-        projected_orthogonal_scores_ = projected_saturated_param_.matmul(self.saturated_loadings_)
+        projected_orthogonal_scores_ = self.saturated_param_.matmul(self.saturated_loadings_)
         projected_orthogonal_scores_ = torch.linalg.svd(projected_orthogonal_scores_, full_matrices=False)
         self.saturated_scores_ = projected_orthogonal_scores_[0]
         if correct_loadings:
@@ -151,9 +169,9 @@ class GLMPCA:
         Given some orthogonal scores, compute the expected data.
         """
 
-        # Saturated params
-        saturated_param_ = g_invertfun(self.family)(X)
-        saturated_param_ = torch.clip(saturated_param_, -self.max_param, self.max_param)
+        saturated_param_ = self.compute_saturated_params(
+            X, with_intercept=False, exp_family_params=self.exp_family_params
+        )
 
         # Compute associated cell view
         joint_saturated_param_ = deepcopy(saturated_param_.detach())
@@ -162,7 +180,11 @@ class GLMPCA:
         joint_saturated_param_ = torch.matmul(scores, scores.T).matmul(joint_saturated_param_)
         if self.saturated_intercept_ is not None:
             joint_saturated_param_ = joint_saturated_param_ + self.reconstruction_intercept_
-        self.X_reconstruct_view_ = G_grad_fun(self.family)(joint_saturated_param_)
+
+        params = deepcopy(self.exp_family_params)
+        if self.family.lower() in ['negative_binomial', 'nb']:
+            params['r'] = params['r'][params['gene_filter']]
+        self.X_reconstruct_view_ = G_grad_fun(self.family)(joint_saturated_param_, params)
 
         return self.X_reconstruct_view_
 
@@ -182,80 +204,35 @@ class GLMPCA:
         if with_reconstruction_intercept:
             saturated_param_ = saturated_param_ + self.reconstruction_intercept_
 
-        if self.family.lower() in ['negative_binomial', 'nb']:
-            saturated_param_ = saturated_param_.clip(-np.inf,-1e-7)
+        # if self.family.lower() in ['negative_binomial', 'nb']:
+        #     saturated_param_ = saturated_param_.clip(-np.inf,-1e-7)
         return saturated_param_.clone().detach()
 
 
     def compute_saturated_params(self, X, with_intercept=True, exp_family_params=None, save_family_params=False):
         if self.family.lower() in ['negative_binomial', 'nb']:
+            # Load parameter if needed
             if exp_family_params is not None and 'r' in exp_family_params:
-                r_moment_coef = exp_family_params['r']
+                r_coef = exp_family_params['r'].clone()
+                gene_filter = exp_family_params['gene_filter'].clone()
             else:
-                r_moment_coef = torch.ones(X.shape[1])
-                # r_moment_coef = torch.pow(torch.mean(X, axis=0), 2) / (torch.var(X, axis=0) - torch.mean(X, axis=0))
+                r_coef = torch.Tensor(compute_dispersion(pd.DataFrame(X.detach().numpy())).values).flatten()
+                gene_filter = torch.where((r_coef > 0.1) & (~torch.isnan(r_coef)))[0]
 
-            # q_params = torch.log(r_moment_coef.clone())
-            upsilon =  20 * (torch.rand(size=X.shape)-.5)
-            upsilon.requires_grad = True
-            
-            if exp_family_params is not None and 'r' in exp_family_params:
-                q_params = torch.log(r_moment_coef)
-                q_params.requires_grad = True
-                optimizer = torch.optim.Adadelta([upsilon], lr=10**5)
-                refit = False
-            else:
-                q_params = 10 * (torch.rand(size=X.shape[1:]))
-                q_params.requires_grad = True
-                optimizer = torch.optim.Adadelta(
-                    [
-                        {'params':q_params, 'lr': 500.},
-                        {'params':upsilon, 'lr': 500.}
-                    ]
-                )
-                refit = True
-
-            lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.9)
-
-            self._saturated_params_nb_loss = []
-            for iter_descent in range(self.nb_params['epochs']):
-                if iter_descent % 250 == 0:
-                    print(iter_descent)
-                optimizer.zero_grad()
-
-                # Reparametrization of r
-                r_params = torch.exp(q_params)
-
-                lk = torch.sum(log_likelihood('nb', X, upsilon, params={'r':r_params}))
-                lk.backward()
-                optimizer.step()
-                lr_scheduler.step()
-
-                if exp_family_params is not None and 'r' in exp_family_params:
-                    print(upsilon[0])
-                
-                self._saturated_params_nb_loss.append(lk.detach())
-
-            plt.plot(self._saturated_params_nb_loss)
-            plt.show()
-
-            saturated_param_ = upsilon.detach()
-            r_params = torch.exp(q_params).detach()
-
-            # Refit loadings if dispersion was set here
-            # if refit:
-            #     return self.compute_saturated_params(
-            #         X, 
-            #         with_intercept=with_intercept, 
-            #         exp_family_params={'r': r_params}, 
-            #         save_family_params=save_family_params
-            #     )
-
-
+            # Save parameters if required
             if save_family_params:
                 if self.exp_family_params is None:
                     self.exp_family_params = {}
-                self.exp_family_params['r'] = r_params.detach().clone()
+                self.exp_family_params['r'] = torch.Tensor(r_coef)
+                self.exp_family_params['gene_filter'] = torch.where(r_coef > 0.1)[0]
+
+            # Filter genes
+            r_coef = r_coef[gene_filter]
+            X_data = X[:,gene_filter]
+            # saturated_param_ = - torch.log(r_coef / X_data + 1)
+            # saturated_param_ = saturated_param_.clip(-20)
+            # saturated_param_ = - torch.log(torch.exp(-saturated_param_)-1)
+            saturated_param_ = torch.log(X_data).clip(-self.max_param, self.max_param)
 
         else:
             # Compute saturated params
@@ -284,7 +261,11 @@ class GLMPCA:
             with_reconstruction_intercept=True,
             exp_family_params=self.exp_family_params
         )
-        return G_grad_fun(self.family)(projected_saturated_param_, self.exp_family_params)
+
+        params = deepcopy(self.exp_family_params)
+        if self.family.lower() in ['negative_binomial', 'nb']:
+            params['r'] = params['r'][params['gene_filter']]
+        return G_grad_fun(self.family)(projected_saturated_param_, params)
 
 
     def clone_empty_GLMPCA(self):
@@ -297,6 +278,7 @@ class GLMPCA:
         )
         glmpca_clf.saturated_intercept_ = self.saturated_intercept_.clone().detach()
         glmpca_clf.reconstruction_intercept_ = self.reconstruction_intercept_.clone().detach()
+        glmpca_clf.exp_family_params = self.exp_family_params
 
         return glmpca_clf
 

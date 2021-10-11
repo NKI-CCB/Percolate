@@ -51,7 +51,8 @@ def nu_multinomial(x, params=None):
     return x
 
 def nu_negative_binomial(x, params=None):
-    return 1 / (1+torch.exp(-x))
+    r = params['r']
+    return 1 / (1 + r*torch.exp(-x))
 
 def nu_fun(family):
     if family == 'bernoulli':
@@ -259,6 +260,7 @@ def h_fun(family):
 
 def log_h_negative_binomial(x, params=None):
     r = params['r']
+
     return torch.lgamma(x+r) - torch.lgamma(x+1) - torch.lgamma(r)
 
 def log_h_fun(family):
@@ -287,10 +289,16 @@ def likelihood(family, data, theta, params=None):
 
 def log_likelihood(family, data, theta, params=None):
     h = log_h_fun(family)(data, params)
-    nu = nu_fun(family)(data, params)
+    nu = nu_fun(family)(theta, params)
     exp_term = torch.multiply(nu, data)
     partition =  G_fun(family)(nu, params)
     return - h - exp_term + partition
+
+def natural_parameter_log_likelihood(family, data, theta, params=None):
+    nu = nu_fun(family)(theta, params)
+    exp_term = torch.multiply(nu, data)
+    partition =  G_fun(family)(nu, params)
+    return - exp_term + partition
 
 def make_saturated_loading_cost(family, parameters, data, max_value=np.inf, params=None):
     """
@@ -304,8 +312,8 @@ def make_saturated_loading_cost(family, parameters, data, max_value=np.inf, para
         nu = torch.matmul(parameters - intercept, torch.matmul(X, X.T)) + intercept
         nu = nu_mapping(nu, params)
         c = loss(nu, params)
-        c = torch.mean(c)
-        d = torch.mean(torch.multiply(data, nu))
+        c = torch.sum(c)
+        d = torch.sum(torch.multiply(data, nu))
         return c - d
     
     return likelihood
@@ -322,8 +330,8 @@ def make_saturated_sample_proj_cost(family, parameters, data, max_value=np.inf, 
         nu = torch.matmul(torch.matmul(X, X.T), parameters - saturated_intercept) + reconstruction_intercept
         nu = nu_mapping(nu, params)
         c = loss(nu, params)
-        c = torch.mean(c)
-        d = torch.mean(torch.multiply(data, nu))
+        c = torch.sum(c)
+        d = torch.sum(torch.multiply(data, nu))
         return c - d
     
     return likelihood
@@ -347,8 +355,8 @@ def make_saturated_subrotation_loading_cost(family, parameters, data, loadings, 
         theta = torch.matmul(theta, loadings.T) + intercept
 
         c = loss(theta, params)
-        c = torch.mean(c)
-        d = torch.mean(torch.multiply(data, theta))
+        c = torch.sum(c)
+        d = torch.sum(torch.multiply(data, theta))
         return c - d
     
     return likelihood
