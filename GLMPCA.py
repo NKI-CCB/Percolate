@@ -10,6 +10,7 @@ from copy import deepcopy
 from joblib import Parallel, delayed
 import mctorch.nn as mnn
 import mctorch.optim as moptim
+from torch.utils.data import Dataset, TensorDataset, DataLoader
 
 from .negative_binomial_routines import compute_dispersion
 from .exponential_family import *
@@ -24,10 +25,14 @@ def _create_saturated_loading_optim(parameters, data, n_pc, family, learning_rat
     params = deepcopy(exp_family_params)
     if family.lower() in ['negative_binomial', 'nb']:
         params['r'] = params['r'][params['gene_filter']]
-    cost = make_saturated_loading_cost(family, parameters, data, max_value, params)
+    cost = make_saturated_loading_cost(
+        family=family,
+        max_value=max_value, 
+        params=params
+    )
     # optimizer = moptim.ConjugateGradient(params = [loadings, intercept], lr=learning_rate)
     optimizer = moptim.rAdagrad(params = [loadings, intercept], lr=learning_rate)
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.7)
 
     return optimizer, cost, loadings, intercept, lr_scheduler
 
@@ -101,6 +106,8 @@ class GLMPCA:
         self.sample_projection = False
 
         self.exp_family_params = None
+        self.loadings_learning_scores_ = []
+        self.loadings_learning_rates_ = []
 
         # For NB
         if family.lower() in ['negative_binomial', 'nb']:
@@ -112,7 +119,7 @@ class GLMPCA:
             }
 
 
-    def compute_saturated_loadings(self, X, exp_family_params=None):
+    def compute_saturated_loadings(self, X, exp_family_params=None, batch_size=128, n_init=1):
         """
         Compute low-rank feature-level projection of saturated parameters.
         """
@@ -126,10 +133,29 @@ class GLMPCA:
         )
 
         self.learning_rate_ = self.initial_learning_rate_
-        self.saturated_loadings_, self.saturated_intercept_ = self._saturated_loading_iter(
-            self.saturated_param_, 
-            X[:,self.exp_family_params['gene_filter']] if self.family.lower() in ['negative_binomial', 'nb'] else X
-        )
+        self.loadings_learning_scores_ = []
+        self.loadings_learning_rates_ = []
+        if n_init == 1:
+            self.saturated_loadings_, self.saturated_intercept_ = self._saturated_loading_iter(
+                self.saturated_param_, 
+                X[:,self.exp_family_params['gene_filter']] if self.family.lower() in ['negative_binomial', 'nb'] else X,
+                batch_size=batch_size
+            )
+        else:
+            # Perform several initializations and select the top ones.
+            init_results = [
+                self._saturated_loading_iter(
+                    self.saturated_param_, 
+                    X[:,self.exp_family_params['gene_filter']] if self.family.lower() in ['negative_binomial', 'nb'] else X,
+                    batch_size=batch_size,
+                    return_train_likelihood=True
+                ) for _ in range(n_init)
+            ]
+            self.iter_likelihood_results_ = [e[-1].detach().numpy() for e in init_results]
+            self.optimal_iter_arg_ = np.argmin(self.iter_likelihood_results_)
+            self.saturated_loadings_, self.saturated_intercept_ = init_results[self.optimal_iter_arg_][:2]
+
+
         self.saturated_intercept_ = self.saturated_intercept_.clone().detach()
         self.reconstruction_intercept_ = self.saturated_intercept_.clone().detach()
         self.saturated_param_ = self.saturated_param_ - self.saturated_intercept_
@@ -154,12 +180,16 @@ class GLMPCA:
         )
 
         projected_orthogonal_scores_ = self.saturated_param_.matmul(self.saturated_loadings_)
-        projected_orthogonal_scores_ = torch.linalg.svd(projected_orthogonal_scores_, full_matrices=False)
-        self.saturated_scores_ = projected_orthogonal_scores_[0]
-        if correct_loadings:
-            self.saturated_loadings_ = torch.matmul(self.saturated_loadings_, projected_orthogonal_scores_[2].T)
-            self.saturated_loadings_ = torch.matmul(self.saturated_loadings_, torch.diag(1./projected_orthogonal_scores_[1]))
-            self.sample_projection = True
+        projected_orthogonal_scores_ /= torch.linalg.norm(projected_orthogonal_scores_, axis=0)
+        self.saturated_scores_ = projected_orthogonal_scores_.detach().numpy()
+        self.sample_projection = True
+
+        # projected_orthogonal_scores_ = torch.linalg.svd(projected_orthogonal_scores_, full_matrices=False)
+        # self.saturated_scores_ = projected_orthogonal_scores_[0]
+        # if correct_loadings:
+        #     self.saturated_loadings_ = torch.matmul(self.saturated_loadings_, projected_orthogonal_scores_[2].T)
+        #     self.saturated_loadings_ = torch.matmul(self.saturated_loadings_, torch.diag(1./projected_orthogonal_scores_[1]))
+        #     self.sample_projection = True
 
         return self.saturated_scores_
 
@@ -283,10 +313,11 @@ class GLMPCA:
         return glmpca_clf
 
 
-    def _saturated_loading_iter(self, saturated_param, data):
+    def _saturated_loading_iter(self, saturated_param, data, batch_size=128, return_train_likelihood=False):
         """
         Computes the loadings, i.e. orthogonal low-rank projection, which maximise the likelihood of the data.
         """
+
         _optimizer, _cost, _loadings, _intercept, _lr_scheduler = _create_saturated_loading_optim(
             saturated_param.data.clone(),
             data,
@@ -296,33 +327,65 @@ class GLMPCA:
             self.max_param,
             self.exp_family_params
         )
+
         self.loadings_elements_optim_ = [_optimizer, _cost, _loadings, _intercept, _lr_scheduler]
         
-        self.loadings_learning_scores_ = []
-        self.loadings_learning_rates_ = []
+        self.loadings_learning_scores_.append([])
+        self.loadings_learning_rates_.append([])
         previous_loadings = deepcopy(_loadings)
         previous_intercept = deepcopy(_intercept)
+
+        train_data = TensorDataset(data, saturated_param.data.clone())
+        train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
         for idx in range(self.maxiter):
-            a = deepcopy(_loadings)
-            b = deepcopy(_intercept)
             if idx % 100 == 0:
                 print('START ITER %s'%(idx))
-            cost_step = _cost(_loadings, _intercept)
-            self.loadings_learning_scores_.append(cost_step.detach().numpy())
-            cost_step.backward()
-            _optimizer.step()
-            _optimizer.zero_grad()
-            self.loadings_learning_rates_.append(_lr_scheduler.get_last_lr())
+            loss_val = []
+            for data_batch, param_batch in train_loader:
+                cost_step = _cost(
+                    X=_loadings, 
+                    data=data_batch, 
+                    parameters=param_batch, 
+                    intercept=_intercept
+                )
+                # loss_val.append(cost_step.detach().numpy())
+                self.loadings_learning_scores_[-1].append(cost_step.detach().numpy())
+                cost_step.backward()
+                _optimizer.step()
+                _optimizer.zero_grad()
+                self.loadings_learning_rates_[-1].append(_lr_scheduler.get_last_lr())
             _lr_scheduler.step()
 
-            if np.isinf(self.loadings_learning_scores_[-1]) or np.isnan(self.loadings_learning_scores_[-1]):
+            if np.isinf(self.loadings_learning_scores_[-1][-1]) or np.isnan(self.loadings_learning_scores_[-1][-1]):
                 print('RESTART BECAUSE INF/NAN FOUND', flush=True)
                 self.learning_rate_ = self.learning_rate_ / 1.5
-                return self._saturated_loading_iter(saturated_param, data)
+                self.loadings_learning_scores_ = self.loadings_learning_scores_[:-1]
+                self.loadings_learning_rates_ = self.loadings_learning_rates_[:-1]
+                return self._saturated_loading_iter(
+                    saturated_param=saturated_param,
+                    data=data, 
+                    batch_size=batch_size, 
+                    return_train_likelihood=return_train_likelihood
+                )
 
-            previous_loadings = a
-            previous_intercept = b
+        if return_train_likelihood:
+            params = deepcopy(self.exp_family_params)
+            if params is not None and self.family.lower() in ['negative_binomial', 'nb']:
+                params['r'] = params['r'][self.exp_family_params['gene_filter']]
+            _proj_params = saturated_param - _intercept
+            _proj_params = _proj_params.matmul(_loadings).matmul(_loadings.T)
+            _proj_params = _proj_params + _intercept
+            _likelihood = torch.mean(natural_parameter_log_likelihood(
+                self.family, 
+                data, 
+                _proj_params, 
+                params=params
+            ))
 
+            return _loadings, _intercept, _likelihood
+
+        # Reinitialize learning rate
+        self.learning_rate_ = self.initial_learning_rate_
         return _loadings, _intercept
 
 
@@ -410,17 +473,19 @@ class GLMPCA:
             self.max_param
         )
         
-        self.subrotation_learning_scores_ = []
-        self.subrotation_learning_rates_ = []
+        # self.subrotation_learning_scores_ = []
+        # self.subrotation_learning_rates_ = []
+        self.subrotation_learning_scores_.append([])
+        self.subrotation_learning_rates_.append([])
         for idx in range(self.maxiter):
             if idx % 100 == 0:
                 print('START ITER %s'%(idx))
             cost_step = _cost(_subrotation, _intercept)
-            self.subrotation_learning_scores_.append(cost_step.detach().numpy())
+            self.subrotation_learning_scores_[-1].append(cost_step.detach().numpy())
             cost_step.backward()
             _optimizer.step()
             _optimizer.zero_grad()
-            self.subrotation_learning_rates_.append(_lr_scheduler.get_last_lr())
+            self.subrotation_learning_rates_[-1].append(_lr_scheduler.get_last_lr())
             _lr_scheduler.step()
 
             if np.isinf(self.subrotation_learning_scores_[-1]) or np.isnan(self.subrotation_learning_rates_[-1]):

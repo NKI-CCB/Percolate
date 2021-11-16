@@ -300,20 +300,20 @@ def natural_parameter_log_likelihood(family, data, theta, params=None):
     partition =  G_fun(family)(nu, params)
     return - exp_term + partition
 
-def make_saturated_loading_cost(family, parameters, data, max_value=np.inf, params=None):
+def make_saturated_loading_cost(family, max_value=np.inf, params=None):
     """
     Constructs the likelihood function for a given family.
     """
     loss = G_fun(family)
     nu_mapping = nu_fun(family)
     
-    def likelihood(X, intercept=None):
+    def likelihood(X, data, parameters, intercept=None):
         intercept = intercept if intercept is not None else torch.zeros(parameters.shape[1])
         nu = torch.matmul(parameters - intercept, torch.matmul(X, X.T)) + intercept
         nu = nu_mapping(nu, params)
         c = loss(nu, params)
-        c = torch.sum(c)
-        d = torch.sum(torch.multiply(data, nu))
+        c = torch.mean(c)
+        d = torch.mean(torch.multiply(data, nu))
         return c - d
     
     return likelihood
