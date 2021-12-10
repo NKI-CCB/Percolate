@@ -164,7 +164,7 @@ class GLMPCA:
         return self.saturated_loadings_
 
 
-    def compute_saturated_orthogonal_scores(self, X, correct_loadings=True):
+    def compute_saturated_orthogonal_scores(self, X, correct_loadings=False):
         """
         Compute low-rank sample-level orthogonal projection of saturated parameters.
         If correct_loadings, align loadings to have perfect match with scores
@@ -179,17 +179,29 @@ class GLMPCA:
             save_family_params=False
         )
 
-        projected_orthogonal_scores_ = self.saturated_param_.matmul(self.saturated_loadings_)
-        projected_orthogonal_scores_ /= torch.linalg.norm(projected_orthogonal_scores_, axis=0)
-        self.saturated_scores_ = projected_orthogonal_scores_.detach().numpy()
-        self.sample_projection = True
+        projected_orthogonal_scores_ = self.saturated_param_.matmul(self.saturated_loadings_).matmul(self.saturated_loadings_.T)
+        # projected_orthogonal_scores_ /= torch.linalg.norm(projected_orthogonal_scores_, axis=0)
+        # self.saturated_scores_ = projected_orthogonal_scores_.detach().numpy()
+        # self.sample_projection = True
 
-        # projected_orthogonal_scores_ = torch.linalg.svd(projected_orthogonal_scores_, full_matrices=False)
-        # self.saturated_scores_ = projected_orthogonal_scores_[0]
-        # if correct_loadings:
-        #     self.saturated_loadings_ = torch.matmul(self.saturated_loadings_, projected_orthogonal_scores_[2].T)
-        #     self.saturated_loadings_ = torch.matmul(self.saturated_loadings_, torch.diag(1./projected_orthogonal_scores_[1]))
-        #     self.sample_projection = True
+        self.projected_orthogonal_scores_svd_ = torch.linalg.svd(projected_orthogonal_scores_, full_matrices=False)
+        # Restrict to top components and return SVD in form U@S@V^T
+        svd_results_ = []
+        svd_results_.append(self.projected_orthogonal_scores_svd_[0][:,:self.n_pc])
+        svd_results_.append(self.projected_orthogonal_scores_svd_[1][:self.n_pc])
+        svd_results_.append(self.projected_orthogonal_scores_svd_[2].T[:,:self.n_pc])
+        self.projected_orthogonal_scores_svd_ = svd_results_
+
+        # Compute saturated scores by taking the left singular values
+        self.saturated_scores_ = self.projected_orthogonal_scores_svd_[0]
+
+        if correct_loadings:
+            self.saturated_loadings_ = torch.matmul(self.saturated_loadings_, self.projected_orthogonal_scores_svd_[2].T)
+            # self.saturated_loadings_weights_ = 1./self.projected_orthogonal_scores_svd_[1]
+            # It is Sigma_A (or Sigma_B) in the derivation
+            self.saturated_loadings_weights_ = self.projected_orthogonal_scores_svd_[1]
+            self.saturated_loadings_ = torch.matmul(self.saturated_loadings_, torch.diag(1./self.projected_orthogonal_scores_svd_[1]))
+            self.sample_projection = True
 
         return self.saturated_scores_
 

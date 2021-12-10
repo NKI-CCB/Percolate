@@ -57,7 +57,7 @@ class GLMJIVE:
 
             self.factor_models[data_type].compute_saturated_loadings(X[data_type])
             self.orthogonal_scores.append(
-                self.factor_models[data_type].compute_saturated_orthogonal_scores(X[data_type], correct_loadings=True)
+                self.factor_models[data_type].compute_saturated_orthogonal_scores(X[data_type], correct_loadings=False)
             )
 
         # Align by computing joint scores
@@ -86,18 +86,37 @@ class GLMJIVE:
             self.individual_scores_ = torch.diag(torch.Tensor([1]*self.joint_scores_.shape[0])) - self.joint_scores_.matmul(self.joint_scores_.T)
 
             _, S_M, V_M = self.M_svd_
-            V_M = V_M.T
+            self.V_M_ = V_M.T
+            self.joint_proj_ = {
+                self.data_types[0]: self.V_M_.T[:,:self.n_factors[self.data_types[0]]].T,
+                self.data_types[1]: self.V_M_.T[:,self.n_factors[self.data_types[0]]:].T
+            }
 
             # Compute rotation matrices per data-type
             print('START JOINT MODEL', flush=True)
+            self.joint_scores_contribution_ = {}       
             for d in self.data_types:
                 self.joint_models[d].n_pc = self.n_joint
+                rotation = torch.linalg.svd(self.factor_models[d].saturated_scores_.T.matmul(self.joint_scores_), full_matrices=False)
                 self.joint_models[d].saturated_loadings_ = self.factor_models[d].saturated_loadings_.matmul(
                     self.factor_models[d].saturated_scores_.T.matmul(self.joint_scores_)
                 )
+                # Compute the joint models as indicated in Methods
+                self.joint_models[d].saturated_loadings_ = self.factor_models[d].saturated_loadings_.matmul(
+                    self.factor_models[d].saturated_loadings_.T
+                ).matmul(
+                    self.factor_models[d].projected_orthogonal_scores_svd_[2]
+                ).matmul(
+                    torch.diag(1/self.factor_models[d].projected_orthogonal_scores_svd_[1])
+                ).matmul(self.joint_proj_[d]).matmul(torch.diag(1/S_M)[:,:self.n_joint])
                 self.joint_models[d].compute_reconstructed_data(
                     X[d], 
                     self.joint_scores_
+                )
+
+                # Compute the contribution to the joint scores
+                self.joint_scores_contribution_[d] = self.factor_models[d].saturated_param_.matmul(
+                    self.joint_models[d].saturated_loadings_
                 )
 
             # Set up individual
