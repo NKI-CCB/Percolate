@@ -1,6 +1,9 @@
 import torch
 import numpy as np
 from copy import deepcopy
+from sklearn.model_selection import GridSearchCV, KFold
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.pipeline import Pipeline
 from .GLMPCA import GLMPCA
 from .difference_GLMPCA import difference_GLMPCA
 from .residualGLMPCA import ResidualGLMPCA
@@ -195,6 +198,83 @@ class GLMJIVE:
 
         return True
 
+
+    def set_out_of_sample_extension(self, known_data_type, cv=10, n_jobs=1):
+        """
+        Set up the out-of-sample computation by training kNN regression models from the 
+        known data type to the other unknown type.
+
+        known_data_type: str
+            Data-type to regress on.
+        """
+
+        # Set known and unknown data-type
+        self.known_data_type = known_data_type
+        self.unknown_data_type = [e for e in self.data_types if e != self.known_data_type]
+        assert len(self.unknown_data_type) == 1
+        self.unknown_data_type = self.unknown_data_type[0]
+
+        # Train regression model
+        self.trans_type_regressors_ = {
+            joint_factor_idx: self._train_trans_type_regression_model(joint_factor_idx, cv=cv, n_jobs=n_jobs)
+            for joint_factor_idx in range(self.n_joint)
+        }
+
+        return True
+
+    def compute_joint_signal(self, X, return_decomposition=False):
+        """
+        Given a sample of self.known_data:
+            - Project X on the joint factor.
+            - Predict the unknown_data type.
+            - Sum two contributions.
+        """
+
+        # Project data
+        U_known = self.joint_models[self.known_data_type].project_low_rank(X)
+
+        # Predict unknown_data
+        U_unknown = torch.Tensor([
+            self.trans_type_regressors_[joint_factor_idx].predict(U_known.detach().numpy())
+            for joint_factor_idx in range(self.n_joint)
+        ]).T
+
+        if return_decomposition:
+            return U_known, U_unknown
+        return U_known + U_unknown
+        
+
+    def _train_trans_type_regression_model(self, unknown_factor_idx, cv=10, n_jobs=1):
+        """
+        Train a kNN regression model from the known data-type to the unknown data-type.
+        """
+
+        X_known = self.joint_scores_contribution_[self.known_data_type].detach().numpy()
+        X_unknown = self.joint_scores_contribution_[self.unknown_data_type][:,unknown_factor_idx].detach().numpy()
+
+        param_grid = {
+            'regression__n_neighbors': np.linspace(2,20,19).astype(int),
+            'regression__weights': ['uniform', 'distance']
+        }
+
+        # GridSearch by cross-validation
+        imputation_model_ = GridSearchCV(
+            Pipeline([
+                ('regression', KNeighborsRegressor())
+            ]),
+            cv=cv,
+            n_jobs=n_jobs,
+            pre_dispatch='1.2*n_jobs',
+            param_grid=param_grid,
+            verbose=1,
+            scoring='neg_mean_squared_error'
+        )
+
+        return imputation_model_.fit(X_known, X_unknown)
+
+
+
+        
 
     def project_low_rank(self, X, data_source, data_type):
         """
