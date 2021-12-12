@@ -1,6 +1,4 @@
 
-
-
 import numpy as np
 import pandas as pd
 import torch
@@ -271,15 +269,18 @@ class GLMPCA:
             # Filter genes
             r_coef = r_coef[gene_filter]
             X_data = X[:,gene_filter]
+            exp_family_params = {'r': r_coef, 'gene_filter': gene_filter}
+            saturated_param_ = g_invertfun(self.family)(X_data, exp_family_params)
+            # Reparametrization code
             # saturated_param_ = - torch.log(r_coef / X_data + 1)
             # saturated_param_ = saturated_param_.clip(-20)
             # saturated_param_ = - torch.log(torch.exp(-saturated_param_)-1)
-            saturated_param_ = torch.log(X_data).clip(-self.max_param, self.max_param)
+            # saturated_param_ = torch.log(X_data).clip(-self.max_param, self.max_param)
 
         else:
             # Compute saturated params
-            saturated_param_ = g_invertfun(self.family)(X, exp_family_params)
-            saturated_param_ = torch.clip(saturated_param_, -self.max_param, self.max_param)
+            saturated_param_ = g_invertfun(self.family)(X, self.exp_family_params)
+        saturated_param_ = torch.clip(saturated_param_, -self.max_param, self.max_param)
 
         # Project on loadings
         if with_intercept:

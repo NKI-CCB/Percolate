@@ -52,7 +52,9 @@ def nu_multinomial(x, params=None):
 
 def nu_negative_binomial(x, params=None):
     r = params['r']
-    return 1 / (1 + r*torch.exp(-x))
+    # Code for the other re-parameterization
+    #return 1 / (1 + r*torch.exp(-x))
+    return x
 
 def nu_fun(family):
     if family == 'bernoulli':
@@ -86,7 +88,9 @@ def nu_parametrization_multinomial(x, params=None):
     return x
 
 def nu_parametrization_negative_binomial(x, params=None):
-    return - torch.log(x/(1-x))
+    # Code for the other re-parameterization
+    # Code for the other re-parameterizationreturn - torch.log(x/(1-x))
+    return x
 
 def nu_parametrization_fun(family):
     if family == 'bernoulli':
