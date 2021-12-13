@@ -331,6 +331,9 @@ class GLMPCA:
         Computes the loadings, i.e. orthogonal low-rank projection, which maximise the likelihood of the data.
         """
 
+        # Set device for GPU usage
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
         _optimizer, _cost, _loadings, _intercept, _lr_scheduler = _create_saturated_loading_optim(
             saturated_param.data.clone(),
             data,
@@ -341,6 +344,8 @@ class GLMPCA:
             self.exp_family_params
         )
 
+        _loadings = _loadings.to(device)
+        _intercept = _intercept.to(device)
         self.loadings_elements_optim_ = [_optimizer, _cost, _loadings, _intercept, _lr_scheduler]
         
         self.loadings_learning_scores_.append([])
@@ -348,11 +353,14 @@ class GLMPCA:
         previous_loadings = deepcopy(_loadings)
         previous_intercept = deepcopy(_intercept)
 
+        data = data.to(device)
+        saturated_param = saturated_param.to(device)
         train_data = TensorDataset(data, saturated_param.data.clone())
         train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
+
         for idx in range(self.maxiter):
             if idx % 100 == 0:
-                print('START ITER %s'%(idx))
+                print('\tSTART ITER %s'%(idx))
             loss_val = []
             for data_batch, param_batch in train_loader:
                 cost_step = _cost(
@@ -370,8 +378,8 @@ class GLMPCA:
             _lr_scheduler.step()
 
             if np.isinf(self.loadings_learning_scores_[-1][-1]) or np.isnan(self.loadings_learning_scores_[-1][-1]):
-                print('RESTART BECAUSE INF/NAN FOUND', flush=True)
-                self.learning_rate_ = self.learning_rate_ / 1.5
+                print('\tRESTART BECAUSE INF/NAN FOUND', flush=True)
+                self.learning_rate_ = self.learning_rate_ * 0.9
                 self.loadings_learning_scores_ = self.loadings_learning_scores_[:-1]
                 self.loadings_learning_rates_ = self.loadings_learning_rates_[:-1]
                 return self._saturated_loading_iter(
@@ -380,6 +388,8 @@ class GLMPCA:
                     batch_size=batch_size, 
                     return_train_likelihood=return_train_likelihood
                 )
+
+        print('\tEND OPTIMISATION\n')
 
         if return_train_likelihood:
             params = deepcopy(self.exp_family_params)

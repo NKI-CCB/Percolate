@@ -324,6 +324,13 @@ def make_saturated_loading_cost(family, max_value=np.inf, params=None):
 
 
 def make_saturated_sample_proj_cost(family, parameters, data, max_value=np.inf, params=None):
+    """
+    - family: str
+        Exponential family name, e.g. "bernoulli", "negative binomial", ...
+    - parameters: torch.Tensor
+        Saturated parameters to compare to.
+    - data 
+    """
     loss = G_fun(family)
     nu_mapping = nu_mapping(family)
     
