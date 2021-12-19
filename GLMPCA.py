@@ -139,7 +139,7 @@ class GLMPCA:
             with_intercept=False, 
             exp_family_params=self.exp_family_params, 
             save_family_params=True
-        )
+        ).to(device)
 
         self.learning_rate_ = self.initial_learning_rate_
         self.loadings_learning_scores_ = []
