@@ -31,6 +31,9 @@ from copy import deepcopy
 import numpy as np
 import scipy
 from sklearn.preprocessing import StandardScaler
+from joblib import Parallel, delayed
+
+from .beta_routines import compute_alpha, compute_alpha_gene
 
 saturation_eps = 10**-10
 
@@ -56,6 +59,9 @@ def nu_negative_binomial(x, params=None):
     #return 1 / (1 + r*torch.exp(-x))
     return x
 
+def nu_beta(x, params=None):
+    return x
+
 def nu_fun(family):
     if family == 'bernoulli':
         return nu_bernoulli
@@ -69,6 +75,8 @@ def nu_fun(family):
         return nu_multinomial
     elif family.lower() in ['negative_binomial', 'nb']:
         return nu_negative_binomial
+    elif family.lower() in ['beta']:
+        return nu_beta
 
 
 # Function that computes the parametrization of the natural parameters.
@@ -92,6 +100,11 @@ def nu_parametrization_negative_binomial(x, params=None):
     # Code for the other re-parameterizationreturn - torch.log(x/(1-x))
     return x
 
+def nu_parametrization_beta(x, params=None):
+    # Code for the other re-parameterization
+    # Code for the other re-parameterizationreturn - torch.log(x/(1-x))
+    return x
+
 def nu_parametrization_fun(family):
     if family == 'bernoulli':
         return nu_parametrization_bernoulli
@@ -105,8 +118,11 @@ def nu_parametrization_fun(family):
         return nu_parametrization_multinomial
     elif family.lower() in ['negative_binomial', 'nb']:
         return nu_parametrization_negative_binomial
+    elif family.lower() in ['beta']:
+        return nu_parametrization_beta
 
 # Functions G
+# Corresponds to function A in manuscript
 def G_gaussian(x, params=None):
     return torch.square(x) / 2
 
@@ -126,6 +142,9 @@ def G_negative_binomial(x, params=None):
     r = params['r']
     return - r * torch.log(1-torch.exp(x.clip(-np.inf,-1e-7)))
 
+def G_beta(x, params=None):
+    beta = params['beta']
+    return torch.lgamma(x) + torch.lgamma(beta) - torch.lgamma(x+beta)
 
 def G_fun(family):
     if family == 'bernoulli':
@@ -140,8 +159,11 @@ def G_fun(family):
         return G_multinomial
     elif family.lower() in ['negative_binomial', 'nb']:
         return G_negative_binomial
+    elif family.lower() in ['beta']:
+        return G_beta
 
 # Functions G
+# Corresponds to gradient of G
 def G_grad_gaussian(x, params=None):
     return x
 
@@ -162,6 +184,10 @@ def G_grad_negative_binomial(x, params=None):
     r = params['r']
     return - r / (1-torch.exp(-x))
 
+def G_grad_beta(x, params=None):
+    beta = params['b']
+    return torch.digamma(x) - torch.digamma(x+beta)
+
 def G_grad_fun(family):
     if family == 'bernoulli':
         return G_grad_bernoulli
@@ -175,14 +201,13 @@ def G_grad_fun(family):
         raise NotImplementedError('multinomial not implemented')
     elif family.lower() in ['negative_binomial', 'nb']:
         return G_grad_negative_binomial
-
+    elif family.lower() in ['beta']:
+        return G_grad_beta
 
 # g_invert is the inverse of the derivative of A.
 def g_invert_bernoulli(x, params=None):
     y = deepcopy(x)
     y = torch.log(y/(1-y))
-    # y[y==0] = - np.inf
-    # y[y==1] = np.inf
     return y
     # return - np_ag.log((1-x)/(x+saturation_eps))
 
@@ -205,6 +230,18 @@ def g_invert_negative_binomial(x, params=None):
     r = params['r']
     return torch.log(x/(x+r))
 
+def g_invert_beta(x, params=None):
+    beta = params['beta']
+    if 'n_jobs' in params:
+        n_jobs = params['n_jobs']
+    else:
+        n_jobs = 1
+
+    return torch.Tensor(Parallel(n_jobs=n_jobs, verbose=10)(
+        delayed(compute_alpha_gene)(beta[j], x[:,j], eps=10**(-8))
+        for j in range(x.shape[1])
+    )).T
+
 def g_invertfun(family):
     if family == 'bernoulli':
         return g_invert_bernoulli
@@ -218,6 +255,8 @@ def g_invertfun(family):
         raise NotImplementedError('multinomial not implemented')
     elif family.lower() in ['negative_binomial', 'nb']:
         return g_invert_negative_binomial
+    elif family.lower() in ['beta']:
+        return g_invert_beta
 
 
 # Functions h
@@ -245,6 +284,10 @@ def h_multinomial(x, params=None):
     pass
 
 def h_negative_binomial(x, params=None):
+    r = params['r']
+    return torch.Tensor(scipy.special.binom(x+r-1, x))
+
+def h_beta(x, params=None):
     r = params['r']
     return torch.Tensor(scipy.special.binom(x+r-1, x))
 

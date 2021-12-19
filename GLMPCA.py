@@ -9,6 +9,7 @@ from joblib import Parallel, delayed
 import mctorch.nn as mnn
 import mctorch.optim as moptim
 from torch.utils.data import Dataset, TensorDataset, DataLoader
+from scipy.stats import beta as beta_dst
 
 from .negative_binomial_routines import compute_dispersion
 from .exponential_family import *
@@ -30,7 +31,7 @@ def _create_saturated_loading_optim(parameters, data, n_pc, family, learning_rat
     )
     # optimizer = moptim.ConjugateGradient(params = [loadings, intercept], lr=learning_rate)
     optimizer = moptim.rAdagrad(params = [loadings, intercept], lr=learning_rate)
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.7)
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.9)
 
     return optimizer, cost, loadings, intercept, lr_scheduler
 
@@ -276,6 +277,21 @@ class GLMPCA:
             # saturated_param_ = saturated_param_.clip(-20)
             # saturated_param_ = - torch.log(torch.exp(-saturated_param_)-1)
             # saturated_param_ = torch.log(X_data).clip(-self.max_param, self.max_param)
+
+        elif self.family.lower() in ['beta']:
+            beta_parameters = [
+                beta_dst.fit(X_feat, floc=0, fscale=1)[1]
+                for X_feat in X.T
+            ]
+            
+            if save_family_params:
+                if self.exp_family_params is None:
+                    self.exp_family_params = {}
+                self.exp_family_params['beta'] = torch.Tensor(beta_parameters)
+                self.exp_family_params['n_jobs'] = 10 #self.n_jobs
+
+            exp_family_params = {'beta': torch.Tensor(beta_parameters), 'n_jobs': 20}
+            saturated_param_ = g_invertfun(self.family)(X, exp_family_params)
 
         else:
             # Compute saturated params
