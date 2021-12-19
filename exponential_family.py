@@ -361,7 +361,7 @@ def make_saturated_loading_cost(family, max_value=np.inf, params=None):
         c = loss(nu, params)
         c = torch.mean(c)
         d = torch.mean(torch.multiply(data, nu))
-        print(c.get_device(), d.get_device())
+        # print(c.get_device(), d.get_device())
         return c - d
     
     return likelihood

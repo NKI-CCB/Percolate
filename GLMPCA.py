@@ -355,6 +355,7 @@ class GLMPCA:
 
         # Set device for GPU usage
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print(device)
 
         _optimizer, _cost, _loadings, _intercept, _lr_scheduler = _create_saturated_loading_optim(
             saturated_param.data.clone(),
@@ -386,6 +387,7 @@ class GLMPCA:
                 print('\tSTART ITER %s'%(idx))
             loss_val = []
             for data_batch, param_batch in train_loader:
+                print(data_batch.get_device())
                 cost_step = _cost(
                     X=_loadings, 
                     data=data_batch, 
