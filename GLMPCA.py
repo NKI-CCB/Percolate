@@ -130,8 +130,7 @@ class GLMPCA:
         """
         # Set device
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        if 'cuda' in str(device):
-            torch.set_default_tensor_type('torch.cuda.FloatTensor')
+        
 
         if exp_family_params is not None:
             self.exp_family_params = exp_family_params
@@ -426,14 +425,14 @@ class GLMPCA:
         if return_train_likelihood:
             params = deepcopy(self.exp_family_params)
             if params is not None and self.family.lower() in ['negative_binomial', 'nb']:
-                params['r'] = params['r'][self.exp_family_params['gene_filter']]
+                params['r'] = params['r'][self.exp_family_params['gene_filter']].to(device)
             _proj_params = saturated_param - _intercept
             _proj_params = _proj_params.matmul(_loadings).matmul(_loadings.T)
             _proj_params = _proj_params + _intercept
             _likelihood = torch.mean(natural_parameter_log_likelihood(
                 self.family, 
-                data, 
-                _proj_params, 
+                data.to(device), 
+                _proj_params.to(device), 
                 params=params
             ))
 
