@@ -28,7 +28,7 @@ def _create_saturated_loading_optim(parameters, data, n_pc, family, learning_rat
     if params is not None:
         params = {k:params[k].to(device) for k in params}
 
-    if family.lower() in ['negative_binomial', 'nb']:
+    if family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep']:
         params['r'] = params['r'][params['gene_filter']]
     cost = make_saturated_loading_cost(
         family=family,
@@ -49,7 +49,7 @@ def _create_saturated_scores_optim(parameters, data, n_pc, family, learning_rate
         manifold=mnn.Euclidean(parameters.shape[1])
     )
     params = deepcopy(exp_family_params)
-    if family.lower() in ['negative_binomial', 'nb']:
+    if family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep']:
         params['r'] = params['r'][params['gene_filter']]
     cost = make_saturated_sample_proj_cost(family, parameters, data, max_value, params)
     # optimizer = moptim.ConjugateGradient(params = [scores, intercept], lr=learning_rate)
@@ -115,7 +115,7 @@ class GLMPCA:
         self.loadings_learning_rates_ = []
 
         # For NB
-        if family.lower() in ['negative_binomial', 'nb']:
+        if family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep']:
             print('SET DEFAULT PARAMETERS FOR NEGATIVE BINOMIAL', flush=True)
             self.nb_params = {
                 'r_lr': 1000.,
@@ -147,7 +147,7 @@ class GLMPCA:
         if n_init == 1:
             self.saturated_loadings_, self.saturated_intercept_ = self._saturated_loading_iter(
                 self.saturated_param_, 
-                X[:,self.exp_family_params['gene_filter']] if self.family.lower() in ['negative_binomial', 'nb'] else X,
+                X[:,self.exp_family_params['gene_filter']] if self.family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep'] else X,
                 batch_size=batch_size
             )
         else:
@@ -155,7 +155,7 @@ class GLMPCA:
             init_results = [
                 self._saturated_loading_iter(
                     self.saturated_param_, 
-                    X[:,self.exp_family_params['gene_filter']] if self.family.lower() in ['negative_binomial', 'nb'] else X,
+                    X[:,self.exp_family_params['gene_filter']] if self.family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep'] else X,
                     batch_size=batch_size,
                     return_train_likelihood=True
                 ) for _ in range(n_init)
@@ -233,7 +233,7 @@ class GLMPCA:
             joint_saturated_param_ = joint_saturated_param_ + self.reconstruction_intercept_
 
         params = deepcopy(self.exp_family_params)
-        if self.family.lower() in ['negative_binomial', 'nb']:
+        if self.family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep']:
             params['r'] = params['r'][params['gene_filter']]
         self.X_reconstruct_view_ = G_grad_fun(self.family)(joint_saturated_param_, params)
 
@@ -261,7 +261,7 @@ class GLMPCA:
 
 
     def compute_saturated_params(self, X, with_intercept=True, exp_family_params=None, save_family_params=False):
-        if self.family.lower() in ['negative_binomial', 'nb']:
+        if self.family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep']:
             # Load parameter if needed
             if exp_family_params is not None and 'r' in exp_family_params:
                 r_coef = exp_family_params['r'].clone()
@@ -332,7 +332,7 @@ class GLMPCA:
         )
 
         params = deepcopy(self.exp_family_params)
-        if self.family.lower() in ['negative_binomial', 'nb']:
+        if self.family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep']:
             params['r'] = params['r'][params['gene_filter']]
         return G_grad_fun(self.family)(projected_saturated_param_, params)
 
@@ -424,7 +424,7 @@ class GLMPCA:
 
         if return_train_likelihood:
             params = deepcopy(self.exp_family_params)
-            if params is not None and self.family.lower() in ['negative_binomial', 'nb']:
+            if params is not None and self.family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep']:
                 params['r'] = params['r'][self.exp_family_params['gene_filter']].to(device)
             _proj_params = saturated_param - _intercept
             _proj_params = _proj_params.matmul(_loadings).matmul(_loadings.T)

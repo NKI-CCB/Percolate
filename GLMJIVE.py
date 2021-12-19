@@ -29,8 +29,14 @@ class GLMJIVE:
         self.n_factors = n_factors
         self.n_joint = n_joint
         self.families = families
-        self.maxiter = maxiter
-        self.max_param = max_param if max_param is not None else {k:None for k in n_factors}
+        if type(maxiter) is int:
+            self.maxiter = {k: maxiter for k in n_factors}
+        else:
+            self.maxiter = maxiter
+        if type(max_param) is int:
+            self.max_param = {k: max_param for k in n_factors}
+        else:
+            self.max_param = max_param if max_param is not None else {k:None for k in n_factors}
         self.learning_rates = learning_rates if learning_rates is not None else {k:0.01 for k in n_factors}
         self.batch_size = batch_size
         self.n_glmpca_init = n_glmpca_init
@@ -103,7 +109,7 @@ class GLMJIVE:
             self.factor_models[data_type] = GLMPCA(
                 self.n_factors[data_type], 
                 family=self.families[data_type], 
-                maxiter=self.maxiter, 
+                maxiter=self.maxiter[data_type], 
                 max_param=self.max_param[data_type],
                 learning_rate=self.learning_rates[data_type]
             )
@@ -136,7 +142,7 @@ class GLMJIVE:
 
         _, S_M, V_M = self.M_svd_
         self.V_M_ = V_M.T
-        self.joint_proj_ = {
+        self.V_M_decomposition_ = {
             self.data_types[0]: self.V_M_.T[:,:self.n_factors[self.data_types[0]]].T,
             self.data_types[1]: self.V_M_.T[:,self.n_factors[self.data_types[0]]:].T
         }
@@ -157,7 +163,7 @@ class GLMJIVE:
                 self.factor_models[d].projected_orthogonal_scores_svd_[2]
             ).matmul(
                 torch.diag(1/self.factor_models[d].projected_orthogonal_scores_svd_[1])
-            ).matmul(self.joint_proj_[d]).matmul(torch.diag(1/S_M)[:,:self.n_joint])
+            ).matmul(self.V_M_decomposition_[d]).matmul(torch.diag(1/S_M)[:,:self.n_joint])
             self.joint_models[d].compute_reconstructed_data(
                 X[d], 
                 self.joint_scores_
@@ -168,7 +174,7 @@ class GLMJIVE:
                 self.joint_models[d].saturated_loadings_
             )
 
-        # Set up individual
+        # Set up individual by computing the difference
         print('START INDIVIDUAL MODEL', flush=True)
         for d in self.data_types:
             indiv_matrix = torch.Tensor(np.identity(self.joint_scores_.shape[0])) 
