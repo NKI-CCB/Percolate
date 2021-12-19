@@ -26,8 +26,8 @@ def _create_saturated_loading_optim(parameters, data, n_pc, family, learning_rat
     # Load to GPU
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     if params is not None:
-        params = {k:params[k].to(device) for j in params}
-        
+        params = {k:params[k].to(device) for k in params}
+
     if family.lower() in ['negative_binomial', 'nb']:
         params['r'] = params['r'][params['gene_filter']]
     cost = make_saturated_loading_cost(
