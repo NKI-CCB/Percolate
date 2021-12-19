@@ -373,8 +373,8 @@ class GLMPCA:
         
         self.loadings_learning_scores_.append([])
         self.loadings_learning_rates_.append([])
-        previous_loadings = deepcopy(_loadings)
-        previous_intercept = deepcopy(_intercept)
+        previous_loadings = _loadings.clone()
+        previous_intercept = _intercept.clone()
 
         data = data.to(device)
         saturated_param = saturated_param.to(device)
