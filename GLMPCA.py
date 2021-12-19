@@ -395,7 +395,7 @@ class GLMPCA:
                     intercept=_intercept
                 )
 
-                if 'cuda' in device :
+                if 'cuda' in str(device) :
                     self.loadings_learning_scores_[-1].append(cost_step.cpu().detach().numpy())
                 else:
                     self.loadings_learning_scores_[-1].append(cost_step.detach().numpy())
