@@ -160,7 +160,7 @@ class GLMPCA:
                     return_train_likelihood=True
                 ) for _ in range(n_init)
             ]
-            self.iter_likelihood_results_ = [e[-1].detach().numpy() for e in init_results]
+            self.iter_likelihood_results_ = [e[-1].cpu().detach().numpy() for e in init_results]
             self.optimal_iter_arg_ = np.argmin(self.iter_likelihood_results_)
             self.saturated_loadings_, self.saturated_intercept_ = init_results[self.optimal_iter_arg_][:2]
 
