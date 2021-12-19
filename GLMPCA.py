@@ -379,7 +379,7 @@ class GLMPCA:
         saturated_param = saturated_param.to(device)
         train_data = TensorDataset(data, saturated_param.data.clone())
         train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
-        train_loader = train_loader.to(device)
+        # train_loader = train_loader.to(device)
 
         for idx in range(self.maxiter):
             if idx % 100 == 0:
