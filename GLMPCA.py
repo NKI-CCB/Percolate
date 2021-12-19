@@ -128,6 +128,11 @@ class GLMPCA:
         """
         Compute low-rank feature-level projection of saturated parameters.
         """
+        # Set device
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if 'cuda' in str(device):
+            torch.set_default_tensor_type('torch.cuda.FloatTensor')
+
         if exp_family_params is not None:
             self.exp_family_params = exp_family_params
         self.saturated_param_ = self.compute_saturated_params(
