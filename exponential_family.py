@@ -345,11 +345,11 @@ def make_saturated_loading_cost(family, max_value=np.inf, params=None):
         
         # Compute the log-partition on projected parameters
         c = loss(eta, params)
-        c = torch.mean(c)
+        c = torch.sum(c)
 
         # Second term (with potential parametrization)
         nu = nu_mapping(eta, params)
-        d = torch.mean(torch.multiply(data, nu))
+        d = torch.sum(torch.multiply(data, nu))
         return c - d
     
     return likelihood
