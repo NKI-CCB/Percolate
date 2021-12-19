@@ -362,6 +362,9 @@ class GLMPCA:
 
         _loadings = _loadings.to(device)
         _intercept = _intercept.to(device)
+        _lr_scheduler = _lr_scheduler.to(device)
+        _optimizer = _optimizer.to(device)
+        _cost = _cost.to(device)
         self.loadings_elements_optim_ = [_optimizer, _cost, _loadings, _intercept, _lr_scheduler]
         
         self.loadings_learning_scores_.append([])
@@ -373,6 +376,7 @@ class GLMPCA:
         saturated_param = saturated_param.to(device)
         train_data = TensorDataset(data, saturated_param.data.clone())
         train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
+        train_loader = train_loader.to(device)
 
         for idx in range(self.maxiter):
             if idx % 100 == 0:
