@@ -22,6 +22,12 @@ def _create_saturated_loading_optim(parameters, data, n_pc, family, learning_rat
         manifold=mnn.Euclidean(parameters.shape[1])
     )
     params = deepcopy(exp_family_params)
+
+    # Load to GPU
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if params is not None:
+        params = {k:params[k].to(device) for j in params}
+        
     if family.lower() in ['negative_binomial', 'nb']:
         params['r'] = params['r'][params['gene_filter']]
     cost = make_saturated_loading_cost(
@@ -362,8 +368,6 @@ class GLMPCA:
 
         _loadings = _loadings.to(device)
         _intercept = _intercept.to(device)
-        _optimizer = _optimizer.to(device)
-        _cost = _cost.to(device)
         self.loadings_elements_optim_ = [_optimizer, _cost, _loadings, _intercept, _lr_scheduler]
         
         self.loadings_learning_scores_.append([])
