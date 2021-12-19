@@ -394,8 +394,11 @@ class GLMPCA:
                     parameters=param_batch, 
                     intercept=_intercept
                 )
-                # loss_val.append(cost_step.detach().numpy())
-                self.loadings_learning_scores_[-1].append(cost_step.detach().numpy())
+
+                if 'cuda' in device :
+                    self.loadings_learning_scores_[-1].append(cost_step.cpu().detach().numpy())
+                else:
+                    self.loadings_learning_scores_[-1].append(cost_step.detach().numpy())
                 cost_step.backward()
                 _optimizer.step()
                 _optimizer.zero_grad()
