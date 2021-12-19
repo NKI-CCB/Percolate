@@ -161,8 +161,8 @@ class GLMPCA:
             self.saturated_loadings_, self.saturated_intercept_ = init_results[self.optimal_iter_arg_][:2]
 
 
-        self.saturated_intercept_ = self.saturated_intercept_.clone().detach()
-        self.reconstruction_intercept_ = self.saturated_intercept_.clone().detach()
+        self.saturated_intercept_ = self.saturated_intercept_.clone().detach().to(device)
+        self.reconstruction_intercept_ = self.saturated_intercept_.clone().detach().to(device)
         self.saturated_param_ = self.saturated_param_ - self.saturated_intercept_
         self.sample_projection = False
 
@@ -355,7 +355,7 @@ class GLMPCA:
 
         # Set device for GPU usage
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        print(device)
+        print('SATURATED LOADINGS: USING DEVICE %s'%(device))
 
         _optimizer, _cost, _loadings, _intercept, _lr_scheduler = _create_saturated_loading_optim(
             saturated_param.data.clone(),
@@ -387,7 +387,6 @@ class GLMPCA:
                 print('\tSTART ITER %s'%(idx))
             loss_val = []
             for data_batch, param_batch in train_loader:
-                print(data_batch.get_device())
                 cost_step = _cost(
                     X=_loadings, 
                     data=data_batch, 
