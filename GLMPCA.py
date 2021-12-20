@@ -256,18 +256,16 @@ class GLMPCA:
             X_data = X[:,gene_filter]
             exp_family_params = {'r': r_coef, 'gene_filter': gene_filter}
             saturated_param_ = g_invertfun(self.family)(X_data, exp_family_params)
-            # Reparametrization code
-            # saturated_param_ = - torch.log(r_coef / X_data + 1)
-            # saturated_param_ = saturated_param_.clip(-20)
-            # saturated_param_ = - torch.log(torch.exp(-saturated_param_)-1)
-            # saturated_param_ = torch.log(X_data).clip(-self.max_param, self.max_param)
 
         elif self.family.lower() in ['beta_reparam', 'beta_rep']:
-            beta_parameters = [
-                beta_dst.fit(X_feat, floc=0, fscale=1)
-                for X_feat in X.T
-            ]
-            eta = torch.Tensor([e[0] + e[1] for e in beta_parameters])
+            if exp_family_params is not None and 'eta' in exp_family_params:
+                eta = exp_family_params['eta'].clone()
+            else:
+                beta_parameters = [
+                    beta_dst.fit(X_feat, floc=0, fscale=1)
+                    for X_feat in X.T
+                ]
+                eta = torch.Tensor([e[0] + e[1] for e in beta_parameters])
             
             if save_family_params:
                 if self.exp_family_params is None:
@@ -279,10 +277,13 @@ class GLMPCA:
             saturated_param_ = g_invertfun(self.family)(X, exp_family_params)
 
         elif self.family.lower() in ['beta']:
-            beta_parameters = [
-                beta_dst.fit(X_feat, floc=0, fscale=1)[1]
-                for X_feat in X.T
-            ]
+            if exp_family_params is not None and 'beta' in exp_family_params:
+                beta_parameters = exp_family_params['beta'].clone()
+            else:
+                beta_parameters = [
+                    beta_dst.fit(X_feat, floc=0, fscale=1)[1]
+                    for X_feat in X.T
+                ]
             
             if save_family_params:
                 if self.exp_family_params is None:

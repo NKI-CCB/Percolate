@@ -236,7 +236,7 @@ def g_invert_reparametrized(x, params=None):
     n_jobs = params['n_jobs'] if 'n_jobs' in params else 1
 
     return torch.Tensor(Parallel(n_jobs=n_jobs, verbose=10)(
-        delayed(compute_mu_gene)(eta[j], x[:,j], eps=10**(-4), maxiter=200)
+        delayed(compute_mu_gene)(eta[j], x[:,j], eps=10**(-6), maxiter=1000)
         for j in range(x.shape[1])
     )).T
 

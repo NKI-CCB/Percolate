@@ -47,9 +47,9 @@ FUNCTION FOR THE REPARAMETRIZATION
 """
 
 def log_part_grad_zero_reparam(mu, eta, x):
-    return torch.digamma(mu * eta) - torch.digamma(eta - mu * eta) - torch.log(1-x) + torch.log(x)
+    return torch.digamma(mu * eta) - torch.digamma(eta - mu * eta) + torch.log(1-x) - torch.log(x)
 
-def compute_mu(eta, x, eps=10**(-6), maxiter=200):
+def compute_mu(eta, x, eps=10**(-6), maxiter=1000):
     min_mu, max_mu = 0, 1
     mu = (min_mu + max_mu) / 2
     
@@ -70,7 +70,7 @@ def compute_mu(eta, x, eps=10**(-6), maxiter=200):
         iter_idx += 1
     return mu
 
-def compute_mu_gene(eta, X, eps=10**-6, maxiter=200):
+def compute_mu_gene(eta, X, eps=10**-6, maxiter=1000):
     return [
         compute_mu(eta, x, eps=eps, maxiter=maxiter) for x in X
     ]
