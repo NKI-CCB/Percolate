@@ -53,7 +53,7 @@ class GLMJIVE:
         """
 
         # Train GLM-PCA instances.
-        self._train_glmpca_instances(X, exp_family_params=None)
+        self._train_glmpca_instances(X, exp_family_params=exp_family_params)
 
         # Compute the matrix M and decompose it by SVD.
         self._aggregate_scores()
