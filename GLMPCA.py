@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from copy import deepcopy
 from joblib import Parallel, delayed
 import mctorch.nn as mnn
+from pickle import dump, load
 import mctorch.optim as moptim
 from torch.utils.data import Dataset, TensorDataset, DataLoader
 from scipy.stats import beta as beta_dst
@@ -87,15 +88,6 @@ class GLMPCA:
         self.exp_family_params = None
         self.loadings_learning_scores_ = []
         self.loadings_learning_rates_ = []
-
-        # For NB
-        if family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep']:
-            print('SET DEFAULT PARAMETERS FOR NEGATIVE BINOMIAL', flush=True)
-            self.nb_params = {
-                'r_lr': 1000.,
-                'theta_lr': 250.,
-                'epochs': 1000
-            }
 
 
     def compute_saturated_loadings(self, X, exp_family_params=None, batch_size=128, n_init=1):
@@ -469,3 +461,21 @@ class GLMPCA:
             k: self.exp_family_params[k].to(device) if type(self.exp_family_params[k]) is torch.Tensor() else self.exp_family_params[k]
             for k in self.exp_family_params
         }
+
+    def save(self, folder):
+        
+        os.mkdir(folder)
+        torch.save(self.saturated_loadings_, '%s/saturated_loadings_.pt'%(folder))
+        torch.save(self.saturated_intercept_, '%s/saturated_intercept_.pt'%(folder))
+        dump(self.exp_family_params, open('%s/exp_family_params.pkl'%(folder), 'wb'))
+
+        parameters = {
+            'n_pc': n_pc
+            'family': family
+            'maxiter' = maxiter
+            'log_part_theta_matrices_' = None
+            'max_param' = np.abs(max_param)
+            'learning_rate_' = learning_rate
+            'initial_learning_rate_' = learning_rate
+        }
+        dump(parameters, open('%s/params.pkl'%(folder), 'wb'))
