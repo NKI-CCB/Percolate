@@ -305,7 +305,7 @@ class GLMPCA:
             # Compute saturated params
             if save_family_params and self.exp_family_params is None:
                 self.exp_family_params = {}
-            saturated_param_ = g_invertfun(self.family)(X.to(device(), self.exp_family_params_gpu()))
+            saturated_param_ = g_invertfun(self.family)(X.to(device), self.exp_family_params_gpu())
 
         saturated_param_ = torch.clip(saturated_param_, -self.max_param, self.max_param)
 
