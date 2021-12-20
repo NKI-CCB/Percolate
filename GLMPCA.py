@@ -14,6 +14,7 @@ from scipy.stats import beta as beta_dst
 from .negative_binomial_routines import compute_dispersion
 from .exponential_family import *
 
+LEARNING_RATE_LIMIT = 10**(-20)
 
 def _create_saturated_loading_optim(parameters, data, n_pc, family, learning_rate, max_value=np.inf, exp_family_params=None):
     loadings = mnn.Parameter(manifold=mnn.Stiefel(parameters.shape[1], n_pc))
@@ -327,6 +328,9 @@ class GLMPCA:
         Computes the loadings, i.e. orthogonal low-rank projection, which maximise the likelihood of the data.
         """
 
+        if self.learning_rate_ < LEARNING_RATE_LIMIT:
+            raise ValueError('LEARNING RATE IS TOO SMALL : DID NOT CONVERGE')
+
         # Set device for GPU usage
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print('SATURATED LOADINGS: USING DEVICE %s'%(device))
@@ -380,7 +384,7 @@ class GLMPCA:
 
             if np.isinf(self.loadings_learning_scores_[-1][-1]) or np.isnan(self.loadings_learning_scores_[-1][-1]):
                 print('\tRESTART BECAUSE INF/NAN FOUND', flush=True)
-                self.learning_rate_ = self.learning_rate_ * 0.9
+                self.learning_rate_ = self.learning_rate_ * 0.75
                 self.loadings_learning_scores_ = self.loadings_learning_scores_[:-1]
                 self.loadings_learning_rates_ = self.loadings_learning_rates_[:-1]
 
@@ -417,37 +421,3 @@ class GLMPCA:
         # Reinitialize learning rate
         self.learning_rate_ = self.initial_learning_rate_
         return _loadings, _intercept
-
-
-    def _saturated_score_projection_iter(self, saturated_param, data):
-        """
-        Computes the orthogonal scores, i.e. orthogonal sanple low-rank projection, which maximise the likelihood of the data.
-        """
-        _optimizer, _cost, _scores, _lr_scheduler = _create_saturated_scores_projection_optim(
-            saturated_param.data.clone().detach(),
-            data,
-            self.n_pc,
-            self.family,
-            self.learning_rate_,
-            self.max_param
-        )
-        
-        scores_learning_scores_ = []
-        scores_learning_rates_ = []
-        for idx in range(self.maxiter):
-            if idx % 100 == 0:
-                print('START ITER %s'%(idx))
-            cost_step = _cost(_scores, self.saturated_intercept_, self.reconstruction_intercept_)
-            scores_learning_scores_.append(cost_step.detach().numpy())
-            cost_step.backward()
-            _optimizer.step()
-            _optimizer.zero_grad()
-            scores_learning_rates_.append(_lr_scheduler.get_last_lr())
-            _lr_scheduler.step()
-
-            if np.isinf(scores_learning_scores_[-1]) or np.isnan(scores_learning_scores_[-1]):
-                print('RESTART BECAUSE INF/NAN FOUND', flush=True)
-                self.learning_rate_ = self.learning_rate_ / 1.5
-                return self._saturated_score_projection_iter(saturated_param, data)
-
-        return _scores
