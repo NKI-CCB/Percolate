@@ -156,12 +156,13 @@ class GLMPCA:
         if self.saturated_loadings_ is None:
             self.compute_saturated_loadings(X)
 
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.saturated_param_ = self.compute_saturated_params(
             X, 
             with_intercept=True, 
             exp_family_params=self.exp_family_params,
             save_family_params=False
-        )
+        ).to(device)
 
         projected_orthogonal_scores_ = self.saturated_param_.matmul(self.saturated_loadings_).matmul(self.saturated_loadings_.T)
         # projected_orthogonal_scores_ /= torch.linalg.norm(projected_orthogonal_scores_, axis=0)
@@ -194,9 +195,9 @@ class GLMPCA:
         """
         Given some orthogonal scores, compute the expected data.
         """
-
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         saturated_param_ = self.compute_saturated_params(
-            X, with_intercept=False, exp_family_params=self.exp_family_params
+            X.cpu(), with_intercept=False, exp_family_params=self.exp_family_params
         )
 
         # Compute associated cell view
@@ -236,6 +237,8 @@ class GLMPCA:
 
 
     def compute_saturated_params(self, X, with_intercept=True, exp_family_params=None, save_family_params=False):
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
         if self.family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep']:
             # Load parameter if needed
             if exp_family_params is not None and 'r' in exp_family_params:
@@ -255,8 +258,8 @@ class GLMPCA:
             # Filter genes
             r_coef = r_coef[gene_filter]
             X_data = X[:,gene_filter]
-            exp_family_params = {'r': r_coef, 'gene_filter': gene_filter}
-            saturated_param_ = g_invertfun(self.family)(X_data, exp_family_params)
+            # exp_family_params = {'r': r_coef, 'gene_filter': gene_filter}
+            saturated_param_ = g_invertfun(self.family)(X_data.to(device), self.exp_family_params_gpu())
 
         elif self.family.lower() in ['beta_reparam', 'beta_rep']:
             if exp_family_params is not None and 'eta' in exp_family_params:
@@ -274,8 +277,10 @@ class GLMPCA:
                 self.exp_family_params['eta'] = eta
                 self.exp_family_params['n_jobs'] = 10 #self.n_jobs
 
-            exp_family_params = {'eta': eta, 'n_jobs': 20}
-            saturated_param_ = g_invertfun(self.family)(X, exp_family_params)
+            if 'n_jobs' in self.exp_family_params:
+                self.exp_family_params['n_jobs'] = 20
+
+            saturated_param_ = g_invertfun(self.family)(X.cpu(), self.exp_family_params_cpu())
 
         elif self.family.lower() in ['beta']:
             if exp_family_params is not None and 'beta' in exp_family_params:
@@ -292,22 +297,23 @@ class GLMPCA:
                 self.exp_family_params['beta'] = torch.Tensor(beta_parameters)
                 self.exp_family_params['n_jobs'] = 10 #self.n_jobs
 
-            exp_family_params = {'beta': torch.Tensor(beta_parameters), 'n_jobs': 20}
-            saturated_param_ = g_invertfun(self.family)(X, exp_family_params)
+            if 'n_jobs' in self.exp_family_params:
+                self.exp_family_params['n_jobs'] = 20
+            saturated_param_ = g_invertfun(self.family)(X.cpu(), self.exp_family_params_cpu())
 
         else:
             # Compute saturated params
             if save_family_params and self.exp_family_params is None:
                 self.exp_family_params = {}
-            saturated_param_ = g_invertfun(self.family)(X, self.exp_family_params)
-            
+            saturated_param_ = g_invertfun(self.family)(X.to(device(), self.exp_family_params_gpu()))
+
         saturated_param_ = torch.clip(saturated_param_, -self.max_param, self.max_param)
 
         # Project on loadings
         if with_intercept:
-            saturated_param_ = saturated_param_ - self.saturated_intercept_
+            saturated_param_ = saturated_param_.to(device) - self.saturated_intercept_.to(device)
 
-        return saturated_param_.clone().detach()
+        return saturated_param_.clone().detach().to(device)
 
 
     def project_low_rank(self, X):
@@ -449,3 +455,17 @@ class GLMPCA:
         # Reinitialize learning rate
         self.learning_rate_ = self.initial_learning_rate_
         return _loadings, _intercept
+
+
+    def exp_family_params_cpu(self):
+        return {
+            k: self.exp_family_params[k].cpu() of type(self.exp_family_params[k]) is torch.Tensor() else self.exp_family_params[k]
+            for k in self.exp_family_params
+        }
+
+    def exp_family_params_gpu(self):
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        return {
+            k: self.exp_family_params[k].to(device) of type(self.exp_family_params[k]) is torch.Tensor() else self.exp_family_params[k]
+            for k in self.exp_family_params
+        }
