@@ -424,7 +424,7 @@ class GLMPCA:
 
         if return_train_likelihood:
             params = {
-            k: self.exp_family_params[k].to(device) if type(self.exp_family_params[k]) is torch.Tensor else self.exp_family_params[k].to(device) 
+            k: self.exp_family_params[k].to(device) if type(self.exp_family_params[k]) is torch.Tensor else self.exp_family_params[k]
             for k in exp_family_params
             }
             if params is not None and self.family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep']:
