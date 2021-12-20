@@ -19,8 +19,8 @@ class GLMJIVE:
         maxiter=1000,
         max_param=None,
         learning_rates=None,
-        batch_size=128, 
-        n_glmpca_init=1
+        batch_size=None, 
+        n_glmpca_init=None
         ):
         """
          Method can be 'svd' or 'likelihood'.
@@ -38,12 +38,12 @@ class GLMJIVE:
         else:
             self.max_param = max_param if max_param is not None else {k:None for k in n_factors}
         self.learning_rates = learning_rates if learning_rates is not None else {k:0.01 for k in n_factors}
-        self.batch_size = batch_size
-        self.n_glmpca_init = n_glmpca_init
+        self.batch_size = batch_size if batch_size is not None else {k:128 for k in n_factors}
+        self.n_glmpca_init = n_glmpca_init if n_glmpca_init is not None else {k:1 for k in n_factors}
         # self.with_intercept = with_intercept
 
 
-    def fit(self, X, no_alignment=False):
+    def fit(self, X, no_alignment=False, exp_parameters=None):
         """
         X must be a dictionary of data with same keys than n_factors and families.
 
@@ -53,7 +53,7 @@ class GLMJIVE:
         """
 
         # Train GLM-PCA instances.
-        self._train_glmpca_instances(X)
+        self._train_glmpca_instances(X, exp_family_params=None)
 
         # Compute the matrix M and decompose it by SVD.
         self._aggregate_scores()
@@ -96,7 +96,7 @@ class GLMJIVE:
         return True
 
 
-    def _train_glmpca_instances(self, X):
+    def _train_glmpca_instances(self, X, exp_family_params=None):
         """
         Train the GLM-PCA instances needed for the GLM-JIVE.
         """
@@ -104,8 +104,10 @@ class GLMJIVE:
         self.factor_models = {}
         self.orthogonal_scores = []
         self.data_types = list(X.keys())
+        exp_family_params = exp_family_params if exp_family_params is not None else {data_type:None for data_type in X}
         for data_type in self.data_types:
             print('START TYPE %s'%(data_type))
+
             self.factor_models[data_type] = GLMPCA(
                 self.n_factors[data_type], 
                 family=self.families[data_type], 
@@ -116,8 +118,9 @@ class GLMJIVE:
 
             self.factor_models[data_type].compute_saturated_loadings(
                 X[data_type],
-                batch_size=self.batch_size, 
-                n_init=self.n_glmpca_init
+                batch_size=self.batch_size[data_type], 
+                n_init=self.n_glmpca_init[data_type],
+                exp_family_params=exp_family_params[data_type]
             )
             self.orthogonal_scores.append(
                 self.factor_models[data_type].compute_saturated_orthogonal_scores(X[data_type], correct_loadings=False)
@@ -164,10 +167,10 @@ class GLMJIVE:
             ).matmul(
                 torch.diag(1/self.factor_models[d].projected_orthogonal_scores_svd_[1])
             ).matmul(self.V_M_decomposition_[d]).matmul(torch.diag(1/S_M)[:,:self.n_joint])
-            self.joint_models[d].compute_reconstructed_data(
-                X[d], 
-                self.joint_scores_
-            )
+            # self.joint_models[d].compute_reconstructed_data(
+            #     X[d], 
+            #     self.joint_scores_
+            # )
 
             # Compute the contribution to the joint scores
             self.joint_scores_contribution_[d] = self.factor_models[d].saturated_param_.matmul(

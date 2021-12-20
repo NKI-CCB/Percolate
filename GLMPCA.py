@@ -105,7 +105,6 @@ class GLMPCA:
         # Set device
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-
         if exp_family_params is not None:
             self.exp_family_params = exp_family_params
         self.saturated_param_ = self.compute_saturated_params(
@@ -118,6 +117,8 @@ class GLMPCA:
         self.learning_rate_ = self.initial_learning_rate_
         self.loadings_learning_scores_ = []
         self.loadings_learning_rates_ = []
+        print('PARAMS ARE:')
+        print(self.exp_family_params)
         if n_init == 1:
             self.saturated_loadings_, self.saturated_intercept_ = self._saturated_loading_iter(
                 self.saturated_param_, 
@@ -219,7 +220,7 @@ class GLMPCA:
         saturated_param_ = self.compute_saturated_params(
             X, 
             with_intercept=True, 
-            exp_family_params=exp_family_params, 
+            exp_family_params=exp_family_params if exp_family_params is not None else self.exp_family_params, 
             save_family_params=False
         )
 
@@ -296,7 +297,10 @@ class GLMPCA:
 
         else:
             # Compute saturated params
+            if save_family_params and self.exp_family_params is None:
+                self.exp_family_params = {}
             saturated_param_ = g_invertfun(self.family)(X, self.exp_family_params)
+            
         saturated_param_ = torch.clip(saturated_param_, -self.max_param, self.max_param)
 
         # Project on loadings
@@ -424,8 +428,8 @@ class GLMPCA:
 
         if return_train_likelihood:
             params = {
-            k: self.exp_family_params[k].to(device) if type(self.exp_family_params[k]) is torch.Tensor else self.exp_family_params[k]
-            for k in self.exp_family_params
+                k: self.exp_family_params[k].to(device) if type(self.exp_family_params[k]) is torch.Tensor else self.exp_family_params[k]
+                for k in self.exp_family_params
             }
             if params is not None and self.family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep']:
                 params['r'] = params['r'][self.exp_family_params['gene_filter']].to(device)

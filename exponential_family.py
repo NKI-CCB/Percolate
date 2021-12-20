@@ -169,7 +169,7 @@ def G_grad_multinomial(x, params=None):
 
 def G_grad_negative_binomial(x, params=None):
     r = params['r']
-    # return - r / (1-torch.exp(-x))
+    return torch.ones(size=X_predictive_train.shape) * np.inf
 
 def G_grad_beta(x, params=None):
     beta = params['b']
