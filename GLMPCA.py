@@ -470,12 +470,12 @@ class GLMPCA:
         dump(self.exp_family_params, open('%s/exp_family_params.pkl'%(folder), 'wb'))
 
         parameters = {
-            'n_pc': n_pc
-            'family': family
-            'maxiter' = maxiter
-            'log_part_theta_matrices_' = None
-            'max_param' = np.abs(max_param)
-            'learning_rate_' = learning_rate
-            'initial_learning_rate_' = learning_rate
+            'n_pc': self.n_pc,
+            'family': self.family,
+            'maxiter': self.maxiter,
+            'log_part_theta_matrices_': self.log_part_theta_matrices_,
+            'max_param': self.max_param,
+            'learning_rate_': self.learning_rate_,
+            'initial_learning_rate_': self.initial_learning_rate_
         }
         dump(parameters, open('%s/params.pkl'%(folder), 'wb'))
