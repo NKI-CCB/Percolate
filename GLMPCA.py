@@ -42,23 +42,6 @@ def _create_saturated_loading_optim(parameters, data, n_pc, family, learning_rat
     return optimizer, cost, loadings, intercept, lr_scheduler
 
 
-def _create_saturated_scores_optim(parameters, data, n_pc, family, learning_rate, max_value=np.inf, exp_family_params=None):
-    scores = mnn.Parameter(manifold=mnn.Stiefel(parameters.shape[0], n_pc))
-    intercept = mnn.Parameter(
-        data=torch.mean(parameters, axis=0),
-        manifold=mnn.Euclidean(parameters.shape[1])
-    )
-    params = deepcopy(exp_family_params)
-    if family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep']:
-        params['r'] = params['r'][params['gene_filter']]
-    cost = make_saturated_sample_proj_cost(family, parameters, data, max_value, params)
-    # optimizer = moptim.ConjugateGradient(params = [scores, intercept], lr=learning_rate)
-    optimizer = moptim.rAdagrad(params = [scores, intercept], lr=learning_rate)
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.9)
-
-    return optimizer, cost, scores, intercept, lr_scheduler
-
-
 def _create_saturated_scores_projection_optim(parameters, data, n_pc, family, learning_rate, max_value=np.inf):
     scores = mnn.Parameter(manifold=mnn.Stiefel(parameters.shape[0], n_pc))
     cost = make_saturated_sample_proj_cost(family, parameters, data, max_value)
@@ -67,19 +50,6 @@ def _create_saturated_scores_projection_optim(parameters, data, n_pc, family, le
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.9)
 
     return optimizer, cost, scores, lr_scheduler
-
-
-def _create_subrotation_loading_optim(parameters, data, loadings, initial_intercept, n_pc, family, learning_rate, max_value=np.inf):
-    subrotation = mnn.Parameter(manifold=mnn.Stiefel(loadings.shape[1], n_pc))
-    intercept = mnn.Parameter(
-        data=torch.mean(parameters, axis=0),
-        manifold=mnn.Euclidean(parameters.shape[1])
-    )
-    cost = make_saturated_subrotation_loading_cost(family, parameters, data, loadings, initial_intercept, max_value=max_value)
-    optimizer = moptim.rSGD(params=[subrotation, intercept], lr=learning_rate)
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.9)
-
-    return optimizer, cost, subrotation, intercept, lr_scheduler
 
 
 class GLMPCA:
@@ -413,6 +383,12 @@ class GLMPCA:
                 self.learning_rate_ = self.learning_rate_ * 0.9
                 self.loadings_learning_scores_ = self.loadings_learning_scores_[:-1]
                 self.loadings_learning_rates_ = self.loadings_learning_rates_[:-1]
+
+                # Remove memory
+                del train_data, train_loader, _optimizer, _cost, _loadings, _intercept, _lr_scheduler, self.loadings_elements_optim_
+                if 'cuda' in str(device):
+                    torch.cuda.empty_cache()
+
                 return self._saturated_loading_iter(
                     saturated_param=saturated_param,
                     data=data, 
@@ -441,41 +417,6 @@ class GLMPCA:
         # Reinitialize learning rate
         self.learning_rate_ = self.initial_learning_rate_
         return _loadings, _intercept
-
-
-    def _saturated_score_iter(self, saturated_param, data):
-        """
-        Computes the orthogonal scores, i.e. orthogonal sanple low-rank projection, which maximise the likelihood of the data.
-        """
-        _optimizer, _cost, _scores, _intercept, _lr_scheduler = _create_saturated_scores_optim(
-            saturated_param.data.clone(),
-            data,
-            self.n_pc,
-            self.family,
-            self.learning_rate_,
-            self.max_param,
-            self.exp_family_params
-        )
-        
-        self.scores_learning_scores_ = []
-        self.scores_learning_rates_ = []
-        for idx in range(self.maxiter):
-            if idx % 100 == 0:
-                print('START ITER %s'%(idx))
-            cost_step = _cost(_scores, _intercept, _intercept)
-            self.scores_learning_scores_.append(cost_step.detach().numpy())
-            cost_step.backward()
-            _optimizer.step()
-            _optimizer.zero_grad()
-            self.scores_learning_rates_.append(_lr_scheduler.get_last_lr())
-            _lr_scheduler.step()
-
-            if np.isinf(self.scores_learning_scores_[-1]) or np.isnan(self.scores_learning_scores_[-1]):
-                print('RESTART BECAUSE INF/NAN FOUND', flush=True)
-                self.learning_rate_ = self.learning_rate_ / 1.5
-                return self._saturated_score_iter(saturated_param, data)
-
-        return _scores, _intercept
 
 
     def _saturated_score_projection_iter(self, saturated_param, data):
@@ -510,49 +451,3 @@ class GLMPCA:
                 return self._saturated_score_projection_iter(saturated_param, data)
 
         return _scores
-
-
-    def _saturated_subrotation_iter(self, saturated_param, data, loadings, initial_intercept):
-        """
-        Computes the loadings, i.e. orthogonal low-rank projection, which maximise the likelihood of the data.
-        """
-        _optimizer, _cost, _subrotation, _intercept, _lr_scheduler = _create_subrotation_loading_optim(
-            saturated_param.data.clone(),
-            data,
-            loadings,
-            initial_intercept,
-            self.n_pc,
-            self.family,
-            self.learning_rate_,
-            self.max_param
-        )
-        
-        # self.subrotation_learning_scores_ = []
-        # self.subrotation_learning_rates_ = []
-        self.subrotation_learning_scores_.append([])
-        self.subrotation_learning_rates_.append([])
-        for idx in range(self.maxiter):
-            if idx % 100 == 0:
-                print('START ITER %s'%(idx))
-            cost_step = _cost(_subrotation, _intercept)
-            self.subrotation_learning_scores_[-1].append(cost_step.detach().numpy())
-            cost_step.backward()
-            _optimizer.step()
-            _optimizer.zero_grad()
-            self.subrotation_learning_rates_[-1].append(_lr_scheduler.get_last_lr())
-            _lr_scheduler.step()
-
-            if np.isinf(self.subrotation_learning_scores_[-1]) or np.isnan(self.subrotation_learning_rates_[-1]):
-                print('RESTART BECAUSE INF/NAN FOUND', flush=True)
-                self.learning_rate_ = self.learning_rate_ / 1.5
-                return self._saturated_subrotation_iter(saturated_param, data, loadings, initial_intercept)
-
-        _loadings = torch.matmul(loadings, _subrotation)
-
-        # Computation of second intercept
-        _reconstruction_intercept = g_invertfun(self.family)(data)
-        _reconstruction_intercept = torch.clip(_reconstruction_intercept, -self.max_param, self.max_param)
-        _reconstruction_intercept = _reconstruction_intercept - (saturated_param - _intercept).matmul(_loadings).matmul(_loadings.T)
-        _reconstruction_intercept = torch.mean(_reconstruction_intercept, axis=0)
-
-        return _loadings, _intercept, _reconstruction_intercept
