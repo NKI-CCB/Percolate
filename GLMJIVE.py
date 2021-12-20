@@ -43,7 +43,7 @@ class GLMJIVE:
         # self.with_intercept = with_intercept
 
 
-    def fit(self, X, no_alignment=False, exp_parameters=None):
+    def fit(self, X, no_alignment=False, exp_family_params=None):
         """
         X must be a dictionary of data with same keys than n_factors and families.
 
