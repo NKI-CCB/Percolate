@@ -139,9 +139,12 @@ class GLMJIVE:
         return True
 
     def _computation_joint_individual_factor_model(self, X):
+        # Set up GPU device
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
         # Compute joint scores like in AJIVE
         self.joint_scores_ = self.M_svd_[0][:,:self.n_joint]
-        self.individual_scores_ = torch.diag(torch.Tensor([1]*self.joint_scores_.shape[0])) - self.joint_scores_.matmul(self.joint_scores_.T)
+        self.individual_scores_ = torch.diag(torch.Tensor([1]*self.joint_scores_.shape[0])).to(device) - self.joint_scores_.matmul(self.joint_scores_.T)
 
         _, S_M, V_M = self.M_svd_
         self.V_M_ = V_M.T
@@ -167,10 +170,6 @@ class GLMJIVE:
             ).matmul(
                 torch.diag(1/self.factor_models[d].projected_orthogonal_scores_svd_[1])
             ).matmul(self.V_M_decomposition_[d]).matmul(torch.diag(1/S_M)[:,:self.n_joint])
-            # self.joint_models[d].compute_reconstructed_data(
-            #     X[d], 
-            #     self.joint_scores_
-            # )
 
             # Compute the contribution to the joint scores
             self.joint_scores_contribution_[d] = self.factor_models[d].saturated_param_.matmul(
@@ -180,7 +179,7 @@ class GLMJIVE:
         # Set up individual by computing the difference
         print('START INDIVIDUAL MODEL', flush=True)
         for d in self.data_types:
-            indiv_matrix = torch.Tensor(np.identity(self.joint_scores_.shape[0])) 
+            indiv_matrix = torch.Tensor(np.identity(self.joint_scores_.shape[0])).to(device)
             indiv_matrix = indiv_matrix - self.joint_scores_.matmul(self.joint_scores_.T)
             indiv_matrix, _, _ = torch.linalg.svd(indiv_matrix)
             indiv_matrix = indiv_matrix[:,:self.factor_models[d].n_pc - self.n_joint]
@@ -197,7 +196,7 @@ class GLMJIVE:
         # Set up individual
         print('START NOISE MODEL', flush=True)
         for d in self.data_types:
-            noise_matrix = torch.Tensor(np.identity(self.factor_models[d].saturated_loadings_.shape[0])) 
+            noise_matrix = torch.Tensor(np.identity(self.factor_models[d].saturated_loadings_.shape[0])).to(device)
             noise_matrix = noise_matrix - self.factor_models[d].saturated_loadings_.matmul(self.factor_models[d].saturated_loadings_.T)
             noise_matrix, _, _ = torch.linalg.svd(noise_matrix)
             noise_matrix = noise_matrix[:,self.factor_models[d].n_pc:]
