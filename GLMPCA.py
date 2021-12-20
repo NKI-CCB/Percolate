@@ -423,9 +423,13 @@ class GLMPCA:
         print('\tEND OPTIMISATION\n')
 
         if return_train_likelihood:
-            params = deepcopy(self.exp_family_params)
+            params = {
+            k: self.exp_family_params[k].to(device) if type(self.exp_family_params[k]) is torch.Tensor else self.exp_family_params[k].to(device) 
+            for k in exp_family_params
+            }
             if params is not None and self.family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep']:
                 params['r'] = params['r'][self.exp_family_params['gene_filter']].to(device)
+
             _proj_params = saturated_param - _intercept
             _proj_params = _proj_params.matmul(_loadings).matmul(_loadings.T)
             _proj_params = _proj_params + _intercept
