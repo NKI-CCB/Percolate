@@ -27,7 +27,10 @@ def _create_saturated_loading_optim(parameters, data, n_pc, family, learning_rat
     # Load to GPU
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     if params is not None:
-        params = {k:params[k].to(device) for k in params}
+        params = {
+            k:params[k].to(device) if type(params[k]) is torch.Tensor else params[k]
+            for k in params
+        }
 
     if family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep']:
         params['r'] = params['r'][params['gene_filter']]
@@ -258,6 +261,22 @@ class GLMPCA:
             # saturated_param_ = saturated_param_.clip(-20)
             # saturated_param_ = - torch.log(torch.exp(-saturated_param_)-1)
             # saturated_param_ = torch.log(X_data).clip(-self.max_param, self.max_param)
+
+        elif self.family.lower() in ['beta_reparam', 'beta_rep']:
+            beta_parameters = [
+                beta_dst.fit(X_feat, floc=0, fscale=1)
+                for X_feat in X.T
+            ]
+            eta = torch.Tensor([e[0] + e[1] for e in beta_parameters])
+            
+            if save_family_params:
+                if self.exp_family_params is None:
+                    self.exp_family_params = {}
+                self.exp_family_params['eta'] = eta
+                self.exp_family_params['n_jobs'] = 10 #self.n_jobs
+
+            exp_family_params = {'eta': eta, 'n_jobs': 20}
+            saturated_param_ = g_invertfun(self.family)(X, exp_family_params)
 
         elif self.family.lower() in ['beta']:
             beta_parameters = [

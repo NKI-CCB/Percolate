@@ -1,5 +1,10 @@
 import scipy
 import numpy as np
+import torch
+
+"""
+FUNCTION FOR THE CANONICAL BETA DISTRIBUTION
+"""
 
 def compute_constraint(alpha, beta, x):
     """
@@ -36,3 +41,36 @@ def compute_alpha_gene(beta, x, eps=10**(-8)):
     """
     print('START ONE', flush=True)
     return [compute_alpha(beta, x[i]) for i in range(x.shape[0])]
+
+"""
+FUNCTION FOR THE REPARAMETRIZATION
+"""
+
+def log_part_grad_zero_reparam(mu, eta, x):
+    return torch.digamma(mu * eta) - torch.digamma(eta - mu * eta) - torch.log(1-x) + torch.log(x)
+
+def compute_mu(eta, x, eps=10**(-6), maxiter=200):
+    min_mu, max_mu = 0, 1
+    mu = (min_mu + max_mu) / 2
+    
+    iter_idx = 0
+    current_value = log_part_grad_zero_reparam(mu, eta, x)
+    while np.abs(current_value) > eps:
+        if current_value > 0:
+            max_mu = (min_mu + max_mu) / 2
+        else:
+            min_mu = (min_mu + max_mu) / 2
+
+        mu = (min_mu + max_mu) / 2
+        current_value = log_part_grad_zero_reparam(mu, eta, x)
+
+        if iter_idx > maxiter:
+            print('DID NOT CONVERGE WITH LOG PART AT %s'%(current_value))
+            break
+        iter_idx += 1
+    return mu
+
+def compute_mu_gene(eta, X, eps=10**-6, maxiter=200):
+    return [
+        compute_mu(eta, x, eps=eps, maxiter=maxiter) for x in X
+    ]

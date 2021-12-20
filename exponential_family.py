@@ -33,62 +33,68 @@ import scipy
 from sklearn.preprocessing import StandardScaler
 from joblib import Parallel, delayed
 
-from .beta_routines import compute_alpha, compute_alpha_gene
+from .beta_routines import compute_alpha, compute_alpha_gene, compute_mu_gene
 
 saturation_eps = 10**-10
 
-# Compute natural parameters from the parametrization used.
-def nu_gaussian(x, params=None):
-    return x
 
-def nu_bernoulli(x, params=None):
-    return x
+# Compute the product of natural parameter and data (exp term)
+def expt_gaussian(data, saturated_params, params=None):
+    return torch.multiply(data, saturated_params)
 
-def nu_continuous_bernoulli(x, params=None):
-    return x
+def expt_bernoulli(data, saturated_params, params=None):
+    return torch.multiply(data, saturated_params)
 
-def nu_poisson(x, params=None):
-    return x
+def expt_continuous_bernoulli(data, saturated_params, params=None):
+    return torch.multiply(data, saturated_params)
 
-def nu_multinomial(x, params=None):
-    return x
+def expt_poisson(data, saturated_params, params=None):
+    return torch.multiply(data, saturated_params)
 
-def nu_negative_binomial(x, params=None):
-    # r = params['r']
-    # Code for the other re-parameterization
-    #return 1 / (1 + r*torch.exp(-x))
-    return x
+def expt_multinomial(data, saturated_params, params=None):
+    return torch.multiply(data, saturated_params)
 
-def nu_negative_binomial_reparametrized(x, params=None):
+def expt_negative_binomial(data, saturated_params, params=None):
+    return torch.multiply(data, saturated_params)
+
+def expt_negative_binomial_reparametrized(data, saturated_params, params=None):
     r = params['r']
-    # Code for the other re-parameterization
-    # return 1 / (1 + r*torch.exp(-x))
-    return - torch.log(1 + r * torch.exp(-x))
+    reparam_saturated_params = - torch.log(1 + r * torch.exp(-saturated_params))
+    return torch.multiply(data, reparam_saturated_params)
 
-def nu_beta(x, params=None):
-    return x
+def expt_beta_reparametrized(data, saturated_params, params=None):
+    eta = params['eta']
+    first_term = torch.multiply(torch.log(data), saturated_params * eta)
+    second_term = torch.multiply(torch.log(1-data), (1-saturated_params) * eta)
+    return first_term + second_term
 
-def nu_fun(family):
+def expt_beta(data, saturated_params, params=None):
+    raise NotImplementedError
+
+def expt_term(family):
     if family == 'bernoulli':
-        return nu_bernoulli
+        return expt_bernoulli
     elif family == 'continuous_bernoulli':
-        return nu_continuous_bernoulli
+        return expt_continuous_bernoulli
     elif family == 'poisson':
-        return nu_poisson
+        return expt_poisson
     elif family == 'gaussian':
-        return nu_gaussian
+        return expt_gaussian
     elif family == 'multinomial':
-        return nu_multinomial
+        return expt_multinomial
     elif family.lower() in ['negative_binomial', 'nb']:
-        return nu_negative_binomial
+        return expt_negative_binomial
     elif family.lower() in ['negative_binomial_reparam', 'nb_rep']:
-        return nu_negative_binomial_reparametrized
+        return expt_negative_binomial_reparametrized
     elif family.lower() in ['beta']:
-        return nu_beta
+        return expt_beta
+    elif family.lower() in ['beta_reparam', 'beta_rep']:
+        return expt_beta_reparametrized
 
 
 # Functions G
 # Corresponds to function A in manuscript
+# x in the saturated parameters
 def G_gaussian(x, params=None):
     return torch.square(x) / 2
 
@@ -119,6 +125,10 @@ def G_beta(x, params=None):
     beta = params['beta']
     return torch.lgamma(x) + torch.lgamma(beta) - torch.lgamma(x+beta)
 
+def G_beta_reparametrized(x, params=None):
+    eta = params['eta']
+    return torch.lgamma(x * eta) + torch.lgamma((1-x)*eta) - torch.lgamma(eta)
+
 def G_fun(family):
     if family == 'bernoulli':
         return G_bernoulli
@@ -136,6 +146,8 @@ def G_fun(family):
         return G_negative_binomial_reparametrized
     elif family.lower() in ['beta']:
         return G_beta
+    elif family.lower() in ['beta_reparam', 'beta_rep']:
+        return G_beta_reparametrized
 
 # Functions G
 # Corresponds to gradient of G
@@ -212,13 +224,19 @@ def g_invert_negative_binomial_reparametrized(x, params=None):
 
 def g_invert_beta(x, params=None):
     beta = params['beta']
-    if 'n_jobs' in params:
-        n_jobs = params['n_jobs']
-    else:
-        n_jobs = 1
+    n_jobs = params['n_jobs'] if 'n_jobs' in params else 1
 
     return torch.Tensor(Parallel(n_jobs=n_jobs, verbose=10)(
         delayed(compute_alpha_gene)(beta[j], x[:,j], eps=10**(-8))
+        for j in range(x.shape[1])
+    )).T
+
+def g_invert_reparametrized(x, params=None):
+    eta = params['eta']
+    n_jobs = params['n_jobs'] if 'n_jobs' in params else 1
+
+    return torch.Tensor(Parallel(n_jobs=n_jobs, verbose=10)(
+        delayed(compute_mu_gene)(eta[j], x[:,j], eps=10**(-4), maxiter=200)
         for j in range(x.shape[1])
     )).T
 
@@ -239,6 +257,8 @@ def g_invertfun(family):
         return g_invert_negative_binomial_reparametrized
     elif family.lower() in ['beta']:
         return g_invert_beta
+    elif family.lower() in ['beta_reparam', 'beta_rep']:
+        return g_invert_reparametrized
 
 
 # Functions h
@@ -246,17 +266,9 @@ def h_gaussian(x, params=None):
     return np.power(2*np.pi, -1)
 
 def h_bernoulli(x, params=None):
-    # if type(x) == int or type(x) == float:
-    #     return torch(1.)
-    # else:
-    #     return torch.ones(x.shape)
     return 1.
 
 def h_continuous_bernoulli(x, params=None):
-    # if type(x) == int or type(x) == float:
-    #     return torch(1.)
-    # else:
-    #     return torch.ones(x.shape)
     return 1.
 
 def h_poisson(x, params=None):
@@ -270,8 +282,7 @@ def h_negative_binomial(x, params=None):
     return torch.Tensor(scipy.special.binom(x+r-1, x))
 
 def h_beta(x, params=None):
-    r = params['r']
-    return torch.Tensor(scipy.special.binom(x+r-1, x))
+    return 1 / (x * (1-x))
 
 def h_fun(family):
     if family == 'bernoulli':
@@ -311,22 +322,19 @@ def log_h_fun(family):
 # Compute likelihood
 def likelihood(family, data, theta, params=None):
     h = h_fun(family)(data, params)
-    nu = nu_fun(family)(theta, params)
-    exp_term = torch.multiply(nu, data)
+    exp_term = expt_term(family)(data, theta, params)
     partition =  G_fun(family)(theta, params)
     return h * torch.exp(exp_term - partition)
 
 
 def log_likelihood(family, data, theta, params=None):
     h = log_h_fun(family)(data, params)
-    nu = nu_fun(family)(theta, params)
-    exp_term = torch.multiply(nu, data)
+    exp_term = expt_term(family)(data, theta, params)
     partition = G_fun(family)(theta, params)
     return - h - exp_term + partition
 
 def natural_parameter_log_likelihood(family, data, theta, params=None):
-    nu = nu_fun(family)(theta, params)
-    exp_term = torch.multiply(nu, data)
+    exp_term = expt_term(family)(data, theta, params)
     partition = G_fun(family)(theta, params)
     return - exp_term + partition
 
@@ -335,7 +343,8 @@ def make_saturated_loading_cost(family, max_value=np.inf, params=None):
     Constructs the likelihood function for a given family.
     """
     loss = G_fun(family)
-    nu_mapping = nu_fun(family)
+    exp_term_fun = expt_term(family)
+    inner_params = params
     
     def likelihood(X, data, parameters, intercept=None):
         intercept = intercept if intercept is not None else torch.zeros(parameters.shape[1])
@@ -348,8 +357,8 @@ def make_saturated_loading_cost(family, max_value=np.inf, params=None):
         c = torch.sum(c)
 
         # Second term (with potential parametrization)
-        nu = nu_mapping(eta, params)
-        d = torch.sum(torch.multiply(data, nu))
+        d = exp_term_fun(data, eta, inner_params)
+        d = torch.sum(d)
         return c - d
     
     return likelihood
