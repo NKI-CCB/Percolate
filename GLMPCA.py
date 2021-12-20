@@ -459,13 +459,13 @@ class GLMPCA:
 
     def exp_family_params_cpu(self):
         return {
-            k: self.exp_family_params[k].cpu() of type(self.exp_family_params[k]) is torch.Tensor() else self.exp_family_params[k]
+            k: self.exp_family_params[k].cpu() if type(self.exp_family_params[k]) is torch.Tensor() else self.exp_family_params[k]
             for k in self.exp_family_params
         }
 
     def exp_family_params_gpu(self):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         return {
-            k: self.exp_family_params[k].to(device) of type(self.exp_family_params[k]) is torch.Tensor() else self.exp_family_params[k]
+            k: self.exp_family_params[k].to(device) if type(self.exp_family_params[k]) is torch.Tensor() else self.exp_family_params[k]
             for k in self.exp_family_params
         }
