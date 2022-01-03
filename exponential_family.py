@@ -234,8 +234,9 @@ def g_invert_negative_binomial_reparametrized(x, params=None):
     # return - torch.log((2*x+r)/ r / (x+r))
     # return torch.log(x)
     if r.shape[0] != x.shape[1]:
-        r = r[params['gene_filter']]
-    return torch.log(r * r / x)
+        return torch.log(r[params['gene_filter']] * r[params['gene_filter']] / x)
+    else:
+        return torch.log(r * r / x)
 
 def g_invert_beta(x, params=None):
     beta = params['beta']
