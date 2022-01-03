@@ -58,8 +58,12 @@ def expt_negative_binomial(data, saturated_params, params=None):
     return torch.multiply(data, saturated_params)
 
 def expt_negative_binomial_reparametrized(data, saturated_params, params=None):
+    # r = params['r']
+    # reparam_saturated_params = - torch.log(1 + r * torch.exp(-saturated_params))
+    # return torch.multiply(data, reparam_saturated_params)
+
     r = params['r']
-    reparam_saturated_params = - torch.log(1 + r * torch.exp(-saturated_params))
+    reparam_saturated_params = torch.log(r) - torch.log(r + torch.exp(saturated_params))
     return torch.multiply(data, reparam_saturated_params)
 
 def expt_beta_reparametrized(data, saturated_params, params=None):
@@ -113,13 +117,21 @@ def G_multinomial(x, params=None):
 def G_negative_binomial(x, params=None):
     r = params['r']
     # the saturated parameters need to be negative
+    if r.shape[0] != x.shape[1]:
+        r = r[params['gene_filter']]
     return - r * torch.log(1-torch.exp(x.clip(-np.inf,-1e-7)))
     # return - r * torch.log(1-torch.exp(x))
 
 def G_negative_binomial_reparametrized(x, params=None):
+    # r = params['r']
+    # # the saturated parameters need to be negative
+    # return r * torch.log((torch.exp(x) + r) / r)
+
     r = params['r']
+    if r.shape[0] != x.shape[1]:
+        r = r[params['gene_filter']]
     # the saturated parameters need to be negative
-    return r * torch.log((torch.exp(x) + r) / r)
+    return r * torch.log(1 + r*torch.exp(-x))
 
 def G_beta(x, params=None):
     beta = params['beta']
@@ -218,9 +230,12 @@ def g_invert_negative_binomial(x, params=None):
     return torch.log(x/(x+r))
 
 def g_invert_negative_binomial_reparametrized(x, params=None):
-    # r = params['r']
+    r = params['r']
     # return - torch.log((2*x+r)/ r / (x+r))
-    return torch.log(x)
+    # return torch.log(x)
+    if r.shape[0] != x.shape[1]:
+        r = r[params['gene_filter']]
+    return torch.log(r * r / x)
 
 def g_invert_beta(x, params=None):
     beta = params['beta']
@@ -231,7 +246,7 @@ def g_invert_beta(x, params=None):
         for j in range(x.shape[1])
     )).T
 
-def g_invert_reparametrized(x, params=None):
+def g_invert_beta_reparametrized(x, params=None):
     eta = params['eta']
     n_jobs = params['n_jobs'] if 'n_jobs' in params else 1
 
@@ -258,7 +273,7 @@ def g_invertfun(family):
     elif family.lower() in ['beta']:
         return g_invert_beta
     elif family.lower() in ['beta_reparam', 'beta_rep']:
-        return g_invert_reparametrized
+        return g_invert_beta_reparametrized
 
 
 # Functions h

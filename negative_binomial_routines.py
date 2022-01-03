@@ -8,6 +8,11 @@ from copy import deepcopy
 import numpy as np
 rpy2.robjects.numpy2ri.activate()
 
+"""
+WARNING
+DESeq2 returns dispersion, which is not the value "r" but its inverse !!
+We use this definition of alpha = 1 / r for the dispersion.
+"""
 def compute_dispersion(X):
     n_samples, n_genes = X.shape
     X_norm = deepcopy(X).values

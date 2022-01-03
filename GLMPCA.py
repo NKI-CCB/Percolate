@@ -236,15 +236,15 @@ class GLMPCA:
                 r_coef = exp_family_params['r'].clone()
                 gene_filter = exp_family_params['gene_filter'].clone()
             else:
-                r_coef = torch.Tensor(compute_dispersion(pd.DataFrame(X.detach().numpy())).values).flatten()
-                gene_filter = torch.where((r_coef > 0.1) & (~torch.isnan(r_coef)))[0]
+                r_coef = 1. / torch.Tensor(compute_dispersion(pd.DataFrame(X.detach().numpy())).values).flatten()
+                gene_filter = torch.where((r_coef > 0.01) & (~torch.isnan(r_coef)) & (r_coef < 10**4))[0]
 
             # Save parameters if required
             if save_family_params:
                 if self.exp_family_params is None:
                     self.exp_family_params = {}
                 self.exp_family_params['r'] = torch.Tensor(r_coef)
-                self.exp_family_params['gene_filter'] = torch.where(r_coef > 0.1)[0]
+                self.exp_family_params['gene_filter'] = torch.where((r_coef > 0.01) & (~torch.isnan(r_coef)) & (r_coef < 10**4))[0]
 
             # Filter genes
             r_coef = r_coef[gene_filter]
@@ -449,23 +449,29 @@ class GLMPCA:
 
 
     def exp_family_params_cpu(self):
+        if self.exp_family_params is None:
+            return None
         return {
             k: self.exp_family_params[k].cpu() if type(self.exp_family_params[k]) is torch.Tensor() else self.exp_family_params[k]
             for k in self.exp_family_params
         }
 
     def exp_family_params_gpu(self):
+        if self.exp_family_params is None:
+            return None
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         return {
             k: self.exp_family_params[k].to(device) if type(self.exp_family_params[k]) is torch.Tensor() else self.exp_family_params[k]
             for k in self.exp_family_params
         }
 
+
     def save(self, folder):
         
         os.mkdir(folder)
-        torch.save(self.saturated_loadings_, '%s/saturated_loadings_.pt'%(folder))
-        torch.save(self.saturated_intercept_, '%s/saturated_intercept_.pt'%(folder))
+        torch.save(self.saturated_loadings_.cpu(), '%s/saturated_loadings_.pt'%(folder))
+        torch.save(self.saturated_intercept_.cpu(), '%s/saturated_intercept_.pt'%(folder))
+        torch.save(self.saturated_scores_.cpu(), '%s/saturated_scores_.pt'%(folder))
         dump(self.exp_family_params, open('%s/exp_family_params.pkl'%(folder), 'wb'))
 
         parameters = {
@@ -478,3 +484,30 @@ class GLMPCA:
             'initial_learning_rate_': self.initial_learning_rate_
         }
         dump(parameters, open('%s/params.pkl'%(folder), 'wb'))
+
+
+    def load(folder, device='cpu'):
+        instance = GLMPCA(n_pc=-1, family='NA', maxiter=-1, max_param=-1, learning_rate=-1)
+
+        # Import parameters
+        parameters = load(open('%s/params.pkl'%(folder), 'rb'))
+        instance.n_pc = parameters['n_pc']
+        instance.family = parameters['family']
+        instance.maxiter = parameters['maxiter']
+        instance.log_part_theta_matrices_ = parameters['log_part_theta_matrices_']
+        instance.max_param = parameters['max_param']
+        instance.learning_rate_ = parameters['learning_rate_']
+        instance.initial_learning_rate_ = parameters['initial_learning_rate_']
+
+        # Import computed loadings
+        device = torch.device('cpu') if device is None else torch.device(device)
+        instance.saturated_loadings_ = torch.load('%s/saturated_loadings_.pt'%(folder), map_location=device)
+        instance.saturated_intercept_ = torch.load('%s/saturated_intercept_.pt'%(folder), map_location=device)
+        instance.reconstruction_intercept_ = torch.load('%s/saturated_intercept_.pt'%(folder), map_location=device)
+        instance.saturated_scores_ = torch.load('%s/saturated_scores_.pt'%(folder), map_location=device)
+        instance.exp_family_params = load(open('%s/exp_family_params.pkl'%(folder), 'rb'))
+
+        return instance
+
+        
+        
