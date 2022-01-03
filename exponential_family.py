@@ -234,7 +234,9 @@ def g_invert_negative_binomial_reparametrized(x, params=None):
     # return - torch.log((2*x+r)/ r / (x+r))
     # return torch.log(x)
     if r.shape[0] != x.shape[1]:
-        return torch.log(r[params['gene_filter']] * r[params['gene_filter']] / x)
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        r = r[params['gene_filter']].to(device)
+        return torch.log(r * r / x)
     else:
         return torch.log(r * r / x)
 
