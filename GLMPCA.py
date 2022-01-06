@@ -467,12 +467,11 @@ class GLMPCA:
 
 
     def save(self, folder):
-        
-        os.mkdir(folder)
-        torch.save(self.saturated_loadings_.cpu(), '%s/saturated_loadings_.pt'%(folder))
-        torch.save(self.saturated_intercept_.cpu(), '%s/saturated_intercept_.pt'%(folder))
-        torch.save(self.saturated_scores_.cpu(), '%s/saturated_scores_.pt'%(folder))
-        dump(self.exp_family_params, open('%s/exp_family_params.pkl'%(folder), 'wb'))
+
+        if not os.path.isdir(folder):
+            os.mkdir(folder)
+        else:
+            print('WARNING, folder already existing. This may crush pre-existing results', flush=True)
 
         parameters = {
             'n_pc': self.n_pc,
@@ -484,6 +483,17 @@ class GLMPCA:
             'initial_learning_rate_': self.initial_learning_rate_
         }
         dump(parameters, open('%s/params.pkl'%(folder), 'wb'))
+        
+        if hasattr(self, 'saturated_loadings_'):
+            torch.save(self.saturated_loadings_.cpu(), '%s/saturated_loadings_.pt'%(folder))
+        if hasattr(self, 'saturated_intercept_'):
+            torch.save(self.saturated_intercept_.cpu(), '%s/saturated_intercept_.pt'%(folder))
+        if hasattr(self, 'saturated_scores_'):
+            torch.save(self.saturated_scores_.cpu(), '%s/saturated_scores_.pt'%(folder))
+        if hasattr(self, 'exp_family_params'):
+            dump(self.exp_family_params, open('%s/exp_family_params.pkl'%(folder), 'wb'))
+
+        return True
 
 
     def load(folder, device='cpu'):
@@ -501,11 +511,15 @@ class GLMPCA:
 
         # Import computed loadings
         device = torch.device('cpu') if device is None else torch.device(device)
-        instance.saturated_loadings_ = torch.load('%s/saturated_loadings_.pt'%(folder), map_location=device)
-        instance.saturated_intercept_ = torch.load('%s/saturated_intercept_.pt'%(folder), map_location=device)
-        instance.reconstruction_intercept_ = torch.load('%s/saturated_intercept_.pt'%(folder), map_location=device)
-        instance.saturated_scores_ = torch.load('%s/saturated_scores_.pt'%(folder), map_location=device)
-        instance.exp_family_params = load(open('%s/exp_family_params.pkl'%(folder), 'rb'))
+        if 'saturated_loadings_.pt' in os.listdir(folder):
+            instance.saturated_loadings_ = torch.load('%s/saturated_loadings_.pt'%(folder), map_location=device)
+        if 'saturated_intercept_.pt' in os.listdir(folder):
+            instance.saturated_intercept_ = torch.load('%s/saturated_intercept_.pt'%(folder), map_location=device)
+            instance.reconstruction_intercept_ = torch.load('%s/saturated_intercept_.pt'%(folder), map_location=device)
+        if 'saturated_scores_.pt' in os.listdir(folder):
+            instance.saturated_scores_ = torch.load('%s/saturated_scores_.pt'%(folder), map_location=device)
+        if 'exp_family_params.pt' in os.listdir(folder):
+            instance.exp_family_params = load(open('%s/exp_family_params.pkl'%(folder), 'rb'))
 
         return instance
 

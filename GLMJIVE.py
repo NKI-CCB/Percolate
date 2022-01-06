@@ -4,6 +4,7 @@ from copy import deepcopy
 from sklearn.model_selection import GridSearchCV, KFold
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.pipeline import Pipeline
+from pickle import load, dump
 from .GLMPCA import GLMPCA
 from .difference_GLMPCA import difference_GLMPCA
 from .residualGLMPCA import ResidualGLMPCA
@@ -41,6 +42,9 @@ class GLMJIVE:
         self.batch_size = batch_size if batch_size is not None else {k:128 for k in n_factors}
         self.n_glmpca_init = n_glmpca_init if n_glmpca_init is not None else {k:1 for k in n_factors}
         # self.with_intercept = with_intercept
+
+        self.factor_models = {}
+        self.joint_models = {}
 
 
     def fit(self, X, no_alignment=False, exp_family_params=None):
@@ -320,3 +324,56 @@ class GLMJIVE:
     def clone_GLM_JIVE(self):
         return deepcopy(self)
 
+    def save(self, folder):
+        # Save parameters
+        GLMJIVE_params = {
+            'n_factors': self.n_factors,
+            'n_joint': self.n_joint,
+            'families': self.families,
+            'maxiter': self.maxiter,
+            'max_param': self.max_param,
+            'learning_rates': self.learning_rates,
+            'batch_size': self.batch_size,
+            'n_glmpca_init': self.n_glmpca_init
+        }       
+        dump(GLMJIVE_params, open('%s/params.pkl'%(folder), 'wb'))
+
+        # Save factor models
+        for data_type in self.data_types:
+            if data_type in self.factor_models:
+                self.factor_models[data_type].save('%s/factor_model_%s'%(folder, data_type))
+            if data_type in self.joint_models:
+                self.joint_models[data_type].save('%s/joint_model_%s'%(folder, data_type))
+
+        # Save alignment
+        dump(
+            [e.cpu() for e in self.orthogonal_scores], 
+            open('%s/orthogonal_scores.pkl'%(folder), 'wb')
+        )
+        dump(
+            self.data_types,
+            open('%s/data_types.pkl'%(folder), 'wb')
+        )
+        torch.save(self.M_.cpu(), '%s/M.pt'%(folder))
+
+
+    def load(folder):
+        """
+        Load a GLMJIVE instance saved in folder.
+        """
+        GLMJIVE_params = load(open('%s/params.pkl'%(folder), 'rb'))
+        instance = GLMJIVE(**GLMJIVE_params)
+
+        # Load factor models
+        instance.data_types = load(open('%s/data_types.pkl'%(folder), 'rb'))
+        for data_type in instance.data_types:
+            if 'factor_model_%s'%(data_type) in os.listdir(folder):
+                instance.factor_models[data_type] = GLMPCA.load('%s/factor_model_%s'%(folder, data_type))
+            if 'joint_model_%s'%(data_type) in os.listdir(folder):
+                instance.joint_models[data_type] = GLMPCA.load('%s/joint_model_%s'%(folder, data_type))
+
+        # Load alignment
+        instance.orthogonal_scores = load(open('%s/orthogonal_scores.pkl'%(folder), 'rb'))
+        instance.M_ = torch.load('%s/M.pt'%(folder))
+
+        return instance
