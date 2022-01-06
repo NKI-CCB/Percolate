@@ -1,12 +1,15 @@
-import rpy2
-import rpy2.robjects as robjects
-import rpy2.robjects.numpy2ri
-from rpy2.robjects.packages import importr
-from rpy2.rinterface_lib.embedded import RRuntimeError
-import pandas as pd
-from copy import deepcopy
-import numpy as np
-rpy2.robjects.numpy2ri.activate()
+try:
+    import rpy2
+    import rpy2.robjects as robjects
+    import rpy2.robjects.numpy2ri
+    from rpy2.robjects.packages import importr
+    from rpy2.rinterface_lib.embedded import RRuntimeError
+    import pandas as pd
+    from copy import deepcopy
+    import numpy as np
+    rpy2.robjects.numpy2ri.activate()
+except:
+    print('RPY2 CANNOT BE IMPORTED: PROBLEM FOR NEGATIVE BINOMIAL')
 
 """
 WARNING
@@ -35,7 +38,7 @@ def compute_dispersion(X):
         dds <- estimateDispersions(dds);
         a <- dispersions(dds)
     ''')
-    
+
     return pd.DataFrame(
         np.array(robjects.r['a']),
         index=X.columns,
