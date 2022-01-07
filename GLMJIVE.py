@@ -4,6 +4,8 @@ from copy import deepcopy
 from sklearn.model_selection import GridSearchCV, KFold
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.pipeline import Pipeline
+from scipy.stats import ortho_group
+from joblib import Parallel, delayed
 from pickle import load, dump
 from .GLMPCA import GLMPCA
 from .difference_GLMPCA import difference_GLMPCA
@@ -67,10 +69,7 @@ class GLMJIVE:
             return True
 
         # Initialize models
-        self.joint_models = {k:self.factor_models[k].clone_empty_GLMPCA() for k in X}
-        self.individual_models = {k:difference_GLMPCA.clone_from_GLMPCA(self.factor_models[k]) for k in X}
-        self.noise_models = {k:ResidualGLMPCA.clone_from_GLMPCA(self.factor_models[k]) for k in X}
-
+        self._initialize_models(X)
         self._computation_joint_individual_factor_model(X)
 
         return True
@@ -142,13 +141,25 @@ class GLMJIVE:
 
         return True
 
+    def _initialize_models(self, X):
+        self.joint_models = {k:self.factor_models[k].clone_empty_GLMPCA() for k in X}
+        self.individual_models = {k:difference_GLMPCA.clone_from_GLMPCA(self.factor_models[k]) for k in X}
+        self.noise_models = {k:ResidualGLMPCA.clone_from_GLMPCA(self.factor_models[k]) for k in X}
+
     def _computation_joint_individual_factor_model(self, X):
         # Set up GPU device
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         # Compute joint scores like in AJIVE
         self.joint_scores_ = self.M_svd_[0][:,:self.n_joint]
-        self.individual_scores_ = torch.diag(torch.Tensor([1]*self.joint_scores_.shape[0])).to(device) - self.joint_scores_.matmul(self.joint_scores_.T)
+
+        # Compute individual scores by taking the rest of the glmpca signal
+        joint_proj = self.joint_scores_.matmul(self.joint_scores_.T)
+        individual_proj = torch.eye(self.joint_scores_.shape[0]) - joint_proj
+        self.individual_scores_ = {}
+        for score, dt in zip(self.orthogonal_scores, self.data_types):
+            individual_svd = torch.linalg.svd(individual_proj.matmul(score))
+            self.individual_scores_[dt] = individual_svd[0][:,:-self.n_joint]
 
         _, S_M, V_M = self.M_svd_
         self.V_M_ = V_M.T
@@ -291,7 +302,40 @@ class GLMJIVE:
             return self.noise_models[data_source].project_cell_view(X)
 
 
-    def estimate_number_joint_components(self, X, n_perm=20):
+    def estimate_number_joint_components_random_matrix(self, n_iter=20, quantile_top_component=0.95):
+        # Generate random orthogonal matrices
+        random_state = np.random.randint(1,10**9,size=2)
+        random_orth_mat = np.array(Parallel(n_jobs=2, verbose=0)(
+            delayed(ortho_group.rvs)(np.max(score.shape), n_iter, random_state=seed)
+            for score, seed in zip(self.orthogonal_scores, random_state)
+        )).transpose(1,0,2,3)
+
+        # Restrict to the shape of orthogonal scores (previous matrices are squared)
+        random_orth_mat = [
+            [
+                torch.Tensor(m[:score.shape[0],:score.shape[1]])
+                for m, score in zip(mat, self.orthogonal_scores)
+            ]
+            for mat in random_orth_mat
+        ]
+        # Verifies that resulting matrices are orthogonal
+        for mat in random_orth_mat:
+            for m in mat:
+                torch.testing.assert_allclose(m.T.matmul(m), torch.eye(m.shape[1]))
+
+        # Compute resulting top singular values
+        random_svd_value = np.array([
+            torch.linalg.svd(torch.cat(mat, axis=1))[1].detach().numpy()
+            for mat in random_orth_mat
+        ])
+
+        # Compute number of joint components as the components above the 95% top random singular values
+        number_joint = torch.sum(torch.linalg.svd(self.M_)[1] > np.quantile(random_svd_value[:,0],quantile_top_component))
+        number_joint = number_joint.detach().numpy()
+        return int(number_joint)
+
+
+    def estimate_number_joint_components_permutation(self, X, n_perm=20):
         """
         max_joint: int or float
             If float, proportion of the minimum number of components.

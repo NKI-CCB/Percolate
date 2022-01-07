@@ -492,6 +492,11 @@ class GLMPCA:
             torch.save(self.saturated_scores_.cpu(), '%s/saturated_scores_.pt'%(folder))
         if hasattr(self, 'exp_family_params'):
             dump(self.exp_family_params, open('%s/exp_family_params.pkl'%(folder), 'wb'))
+        if hasattr(self, 'projected_orthogonal_scores_svd_'):
+            dump(
+                [x.cpu() for x in self.projected_orthogonal_scores_svd_], 
+                open('%s/projected_orthogonal_scores_svd.pkl'%(folder), 'wb')
+            )
 
         return True
 
@@ -518,8 +523,10 @@ class GLMPCA:
             instance.reconstruction_intercept_ = torch.load('%s/saturated_intercept_.pt'%(folder), map_location=device)
         if 'saturated_scores_.pt' in os.listdir(folder):
             instance.saturated_scores_ = torch.load('%s/saturated_scores_.pt'%(folder), map_location=device)
-        if 'exp_family_params.pt' in os.listdir(folder):
+        if 'exp_family_params.pkl' in os.listdir(folder):
             instance.exp_family_params = load(open('%s/exp_family_params.pkl'%(folder), 'rb'))
+        if 'projected_orthogonal_scores_svd.pkl' in os.listdir(folder):
+            instance.projected_orthogonal_scores_svd_ = load(open('%s/projected_orthogonal_scores_svd.pkl'%(folder), 'rb'))
 
         return instance
 
