@@ -46,15 +46,15 @@ def compute_alpha_gene(beta, x, eps=10**(-8)):
 FUNCTION FOR THE REPARAMETRIZATION
 """
 
-def log_part_grad_zero_reparam(mu, eta, x):
-    return torch.digamma(mu * eta) - torch.digamma(eta - mu * eta) + torch.log(1-x) - torch.log(x)
+def log_part_grad_zero_reparam(mu, nu, x):
+    return torch.digamma(mu * nu) - torch.digamma(nu - mu * nu) + torch.log(1-x) - torch.log(x)
 
-def compute_mu(eta, x, eps=10**(-6), maxiter=1000):
+def compute_mu(nu, x, eps=10**(-6), maxiter=1000):
     min_mu, max_mu = 0, 1
     mu = (min_mu + max_mu) / 2
     
     iter_idx = 0
-    current_value = log_part_grad_zero_reparam(mu, eta, x)
+    current_value = log_part_grad_zero_reparam(mu, nu, x)
     while np.abs(current_value) > eps:
         if current_value > 0:
             max_mu = (min_mu + max_mu) / 2
@@ -62,7 +62,7 @@ def compute_mu(eta, x, eps=10**(-6), maxiter=1000):
             min_mu = (min_mu + max_mu) / 2
 
         mu = (min_mu + max_mu) / 2
-        current_value = log_part_grad_zero_reparam(mu, eta, x)
+        current_value = log_part_grad_zero_reparam(mu, nu, x)
 
         if iter_idx > maxiter:
             print('DID NOT CONVERGE WITH LOG PART AT %s'%(current_value))
@@ -70,7 +70,7 @@ def compute_mu(eta, x, eps=10**(-6), maxiter=1000):
         iter_idx += 1
     return mu
 
-def compute_mu_gene(eta, X, eps=10**-6, maxiter=1000):
+def compute_mu_gene(nu, X, eps=10**-6, maxiter=1000):
     return [
-        compute_mu(eta, x, eps=eps, maxiter=maxiter) for x in X
+        compute_mu(nu, x, eps=eps, maxiter=maxiter) for x in X
     ]

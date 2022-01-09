@@ -221,7 +221,7 @@ class GLMPCA:
         saturated_param_ = torch.matmul(saturated_param_, torch.linalg.pinv(self.saturated_loadings_))
         if with_reconstruction_intercept:
             saturated_param_ = saturated_param_ + self.reconstruction_intercept_
-            
+
         return saturated_param_.detach()
 
 
@@ -251,19 +251,19 @@ class GLMPCA:
             saturated_param_ = g_invertfun(self.family)(X_data.to(device), self.exp_family_params_gpu())
 
         elif self.family.lower() in ['beta_reparam', 'beta_rep']:
-            if exp_family_params is not None and 'eta' in exp_family_params:
-                eta = exp_family_params['eta'].clone()
+            if exp_family_params is not None and 'nu' in exp_family_params:
+                nu = exp_family_params['nu'].clone()
             else:
                 beta_parameters = [
                     beta_dst.fit(X_feat, floc=0, fscale=1)
                     for X_feat in X.T
                 ]
-                eta = torch.Tensor([e[0] + e[1] for e in beta_parameters])
+                nu = torch.Tensor([e[0] + e[1] for e in beta_parameters])
             
             if save_family_params:
                 if self.exp_family_params is None:
                     self.exp_family_params = {}
-                self.exp_family_params['eta'] = eta
+                self.exp_family_params['nu'] = nu
                 self.exp_family_params['n_jobs'] = 10 #self.n_jobs
 
             if 'n_jobs' in self.exp_family_params:

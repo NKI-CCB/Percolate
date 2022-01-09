@@ -67,9 +67,9 @@ def expt_negative_binomial_reparametrized(data, saturated_params, params=None):
     return torch.multiply(data, reparam_saturated_params)
 
 def expt_beta_reparametrized(data, saturated_params, params=None):
-    eta = params['eta']
-    first_term = torch.multiply(torch.log(data), saturated_params * eta)
-    second_term = torch.multiply(torch.log(1-data), (1-saturated_params) * eta)
+    nu = params['nu']
+    first_term = torch.multiply(torch.log(data), saturated_params * nu)
+    second_term = torch.multiply(torch.log(1-data), (1-saturated_params) * nu)
     return first_term + second_term
 
 def expt_beta(data, saturated_params, params=None):
@@ -138,8 +138,8 @@ def G_beta(x, params=None):
     return torch.lgamma(x) + torch.lgamma(beta) - torch.lgamma(x+beta)
 
 def G_beta_reparametrized(x, params=None):
-    eta = params['eta']
-    return torch.lgamma(x * eta) + torch.lgamma((1-x)*eta) - torch.lgamma(eta)
+    nu = params['nu']
+    return torch.lgamma(x * nu) + torch.lgamma((1-x)*nu) - torch.lgamma(nu)
 
 def G_fun(family):
     if family == 'bernoulli':
@@ -195,6 +195,10 @@ def G_grad_beta(eta, params=None):
     beta = params['b']
     return torch.digamma(eta) - torch.digamma(eta+beta)
 
+def G_grad_beta_reparametrized(eta, params=None):
+    nu = params['nu']
+    return torch.digamma(eta * nu) - torch.digamma(nu)
+
 def G_grad_fun(family):
     if family == 'bernoulli':
         return G_grad_bernoulli
@@ -212,6 +216,8 @@ def G_grad_fun(family):
         return G_grad_negative_binomial_reparametrized
     elif family.lower() in ['beta']:
         return G_grad_beta
+    elif family.lower() in ['beta_reparam', 'beta_rep']:
+        return G_grad_beta_reparametrized
 
 # g_invert is the inverse of the derivative of A.
 def g_invert_bernoulli(x, params=None):
@@ -260,11 +266,11 @@ def g_invert_beta(x, params=None):
     )).T
 
 def g_invert_beta_reparametrized(x, params=None):
-    eta = params['eta']
+    nu = params['nu']
     n_jobs = params['n_jobs'] if 'n_jobs' in params else 1
 
     return torch.Tensor(Parallel(n_jobs=n_jobs, verbose=10)(
-        delayed(compute_mu_gene)(eta[j], x[:,j], eps=10**(-6), maxiter=1000)
+        delayed(compute_mu_gene)(nu[j], x[:,j], eps=10**(-6), maxiter=1000)
         for j in range(x.shape[1])
     )).T
 
