@@ -162,30 +162,38 @@ def G_fun(family):
         return G_beta_reparametrized
 
 # Functions G
-# Corresponds to gradient of G
-def G_grad_gaussian(x, params=None):
-    return x
+# Corresponds to gradient of G, equals to the expectation of T
+# 
+def G_grad_gaussian(eta, params=None):
+    return eta
 
-def G_grad_bernoulli(x, params=None):
-    # return torch.nn.functional.logsigmoid(x)
-    return 1./(1.+torch.exp(-x))
+def G_grad_bernoulli(eta, params=None):
+    return 1./(1.+torch.exp(-eta))
 
-def G_grad_continuous_bernoulli(x, params=None):
-    return (torch.exp(-x)+x-1)/(x * (1-torch.exp(-x)))
+def G_grad_continuous_bernoulli(eta, params=None):
+    return (torch.exp(-eta)+eta-1)/(eta * (1-torch.exp(-eta)))
 
-def G_grad_poisson(x, params=None):
-    return torch.exp(x)
+def G_grad_poisson(eta, params=None):
+    return torch.exp(eta)
 
-def G_grad_multinomial(x, params=None):
+def G_grad_multinomial(eta, params=None):
     return 0
 
-def G_grad_negative_binomial(x, params=None):
+def G_grad_negative_binomial(eta, params=None):
     r = params['r']
-    return torch.ones(size=X_predictive_train.shape) * np.inf
+    if r.shape[0] != eta.shape[1]:
+        r = r[params['gene_filter']]
+    return r / (torch.exp(-eta) - 1)
 
-def G_grad_beta(x, params=None):
+def G_grad_negative_binomial_reparametrized(eta, params=None):
+    r = params['r']
+    if r.shape[0] != eta.shape[1]:
+        r = r[params['gene_filter']]
+    return r * r * torch.exp(-eta)
+
+def G_grad_beta(eta, params=None):
     beta = params['b']
-    return torch.digamma(x) - torch.digamma(x+beta)
+    return torch.digamma(eta) - torch.digamma(eta+beta)
 
 def G_grad_fun(family):
     if family == 'bernoulli':
@@ -200,6 +208,8 @@ def G_grad_fun(family):
         raise NotImplementedError('multinomial not implemented')
     elif family.lower() in ['negative_binomial', 'nb']:
         return G_grad_negative_binomial
+    elif family.lower() in ['negative_binomial_reparam', 'nb_rep']:
+        return G_grad_negative_binomial_reparametrized
     elif family.lower() in ['beta']:
         return G_grad_beta
 

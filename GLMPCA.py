@@ -221,10 +221,8 @@ class GLMPCA:
         saturated_param_ = torch.matmul(saturated_param_, torch.linalg.pinv(self.saturated_loadings_))
         if with_reconstruction_intercept:
             saturated_param_ = saturated_param_ + self.reconstruction_intercept_
-
-        # if self.family.lower() in ['negative_binomial', 'nb']:
-        #     saturated_param_ = saturated_param_.clip(-np.inf,-1e-7)
-        return saturated_param_.clone().detach()
+            
+        return saturated_param_.detach()
 
 
     def compute_saturated_params(self, X, with_intercept=True, exp_family_params=None, save_family_params=False):
@@ -323,10 +321,8 @@ class GLMPCA:
             exp_family_params=self.exp_family_params
         )
 
-        params = deepcopy(self.exp_family_params)
-        if self.family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep']:
-            params['r'] = params['r'][params['gene_filter']]
-        return G_grad_fun(self.family)(projected_saturated_param_, params)
+
+        return G_grad_fun(self.family)(projected_saturated_param_, self.exp_family_params_gpu)
 
 
     def clone_empty_GLMPCA(self):
