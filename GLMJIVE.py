@@ -400,6 +400,15 @@ class GLMJIVE:
         )
         torch.save(self.M_.cpu(), '%s/M.pt'%(folder))
 
+        if hasattr(self, 'known_data_type') and hasattr(self, 'unknown_data_type'):
+            dump(
+                {'known_data_type': self.known_data_type, 'unknown_data_type':self.unknown_data_type},
+                open('%s/out_of_samples_data_types.pkl'%(folder), 'wb')
+            )
+        if hasattr(self, 'trans_type_regressors_'):
+            dump(self.trans_type_regressors_, open('%s/out_of_samples_regression.pkl'%(folder), 'wb'))
+        
+
 
     def load(folder):
         """
@@ -419,5 +428,12 @@ class GLMJIVE:
         # Load alignment
         instance.orthogonal_scores = load(open('%s/orthogonal_scores.pkl'%(folder), 'rb'))
         instance.M_ = torch.load('%s/M.pt'%(folder))
+
+        if 'out_of_samples_data_types.pkl' not in os.listdir(folder):
+            dt = load(open('%s/out_of_samples_data_types.pkl'%(folder), 'rb'))
+            instance.known_data_type = dt['known_data_type']
+            instance.unknown_data_type = dt['unknown_data_type']
+        if 'out_of_samples_regression.pkl' not in os.listdir(folder):
+            instance.trans_type_regressors_ = load(open('%s/out_of_samples_regression.pkl'%(folder), 'rb'))
 
         return instance
