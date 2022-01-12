@@ -429,11 +429,11 @@ class GLMJIVE:
         instance.orthogonal_scores = load(open('%s/orthogonal_scores.pkl'%(folder), 'rb'))
         instance.M_ = torch.load('%s/M.pt'%(folder))
 
-        if 'out_of_samples_data_types.pkl' not in os.listdir(folder):
+        if 'out_of_samples_data_types.pkl' in os.listdir(folder):
             dt = load(open('%s/out_of_samples_data_types.pkl'%(folder), 'rb'))
             instance.known_data_type = dt['known_data_type']
             instance.unknown_data_type = dt['unknown_data_type']
-        if 'out_of_samples_regression.pkl' not in os.listdir(folder):
+        if 'out_of_samples_regression.pkl' in os.listdir(folder):
             instance.trans_type_regressors_ = load(open('%s/out_of_samples_regression.pkl'%(folder), 'rb'))
 
         return instance
