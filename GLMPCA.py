@@ -10,11 +10,14 @@ from pickle import dump, load
 import mctorch.optim as moptim
 from torch.utils.data import Dataset, TensorDataset, DataLoader
 from scipy.stats import beta as beta_dst
+from scipy.stats import lognorm
 
 from .negative_binomial_routines import compute_dispersion
 from .exponential_family import *
+from .log_normal import LOG_NORMAL_ZERO_THRESHOLD
 
 LEARNING_RATE_LIMIT = 10**(-20)
+
 
 def _create_saturated_loading_optim(parameters, data, n_pc, family, learning_rate, max_value=np.inf, exp_family_params=None):
     loadings = mnn.Parameter(manifold=mnn.Stiefel(parameters.shape[1], n_pc))
@@ -266,8 +269,8 @@ class GLMPCA:
                 self.exp_family_params['nu'] = nu
                 self.exp_family_params['n_jobs'] = 10 #self.n_jobs
 
-            if 'n_jobs' in self.exp_family_params:
-                self.exp_family_params['n_jobs'] = 20
+            if 'n_jobs' not in self.exp_family_params:
+                self.exp_family_params['n_jobs'] = 40
 
             saturated_param_ = g_invertfun(self.family)(X.cpu(), self.exp_family_params_cpu())
 
@@ -286,8 +289,24 @@ class GLMPCA:
                 self.exp_family_params['beta'] = torch.Tensor(beta_parameters)
                 self.exp_family_params['n_jobs'] = 10 #self.n_jobs
 
-            if 'n_jobs' in self.exp_family_params:
-                self.exp_family_params['n_jobs'] = 20
+            if 'n_jobs' not in self.exp_family_params:
+                self.exp_family_params['n_jobs'] = 40
+            saturated_param_ = g_invertfun(self.family)(X.cpu(), self.exp_family_params_cpu())
+
+        elif self.family.lower() in ['log_normal', 'log normal', 'lognorm']:
+            if exp_family_params is not None and 'nu' in exp_family_params:
+                nu_parameters = exp_family_params['nu'].clone()
+            else:
+                nu_parameters = Parallel(n_jobs=20, verbose=1)(
+                    delayed(lognorm.fit)(X_feat, loc=0) for X_feat in X.T
+                )
+                nu_parameters = torch.Tensor([e[0] for e in nu_parameters])
+
+            if save_family_params:
+                if self.exp_family_params is None:
+                    self.exp_family_params = {}
+                self.exp_family_params['nu'] = torch.Tensor(nu_parameters)
+
             saturated_param_ = g_invertfun(self.family)(X.cpu(), self.exp_family_params_cpu())
 
         else:

@@ -234,7 +234,10 @@ class GLMJIVE:
         """
 
         # Project data
-        U_known = self.joint_models[self.known_data_type].project_low_rank(X)
+        if type(X) is dict:
+            U_known = self.joint_models[self.known_data_type].project_low_rank(X[self.known_data_type])
+        else:
+            U_known = self.joint_models[self.known_data_type].project_low_rank(X)
 
         # Predict unknown_data
         U_unknown = torch.Tensor([

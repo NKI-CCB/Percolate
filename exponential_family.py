@@ -34,6 +34,7 @@ from sklearn.preprocessing import StandardScaler
 from joblib import Parallel, delayed
 
 from .beta_routines import compute_alpha, compute_alpha_gene, compute_mu_gene
+from.log_normal import LOG_NORMAL_ZERO_THRESHOLD, pi_val
 
 saturation_eps = 10**-10
 
@@ -75,6 +76,12 @@ def expt_beta_reparametrized(data, saturated_params, params=None):
 def expt_beta(data, saturated_params, params=None):
     raise NotImplementedError
 
+def expt_log_normal(data, saturated_params, params=None):
+    nu = params['nu']
+    first_term = saturated_params / (torch.pow(nu,2)) * torch.log(data + LOG_NORMAL_ZERO_THRESHOLD)
+    second_term = - torch.pow(torch.log(data+LOG_NORMAL_ZERO_THRESHOLD), 2) / (2 * torch.pow(nu,2))
+    return first_term + second_term
+
 def expt_term(family):
     if family == 'bernoulli':
         return expt_bernoulli
@@ -94,6 +101,8 @@ def expt_term(family):
         return expt_beta
     elif family.lower() in ['beta_reparam', 'beta_rep']:
         return expt_beta_reparametrized
+    elif family.lower() in ['log_normal', 'log normal', 'lognorm']:
+        return expt_log_normal
 
 
 # Functions G
@@ -141,6 +150,10 @@ def G_beta_reparametrized(x, params=None):
     nu = params['nu']
     return torch.lgamma(x * nu) + torch.lgamma((1-x)*nu) - torch.lgamma(nu)
 
+def G_log_normal(x, params=None):
+    nu = params['nu']
+    return torch.pow(x/nu,2) / 2 + torch.log(nu)
+
 def G_fun(family):
     if family == 'bernoulli':
         return G_bernoulli
@@ -160,6 +173,8 @@ def G_fun(family):
         return G_beta
     elif family.lower() in ['beta_reparam', 'beta_rep']:
         return G_beta_reparametrized
+    elif family.lower() in ['log_normal', 'log normal', 'lognorm']:
+        return G_log_normal
 
 # Functions G
 # Corresponds to gradient of G, equals to the expectation of T
@@ -198,6 +213,9 @@ def G_grad_beta(eta, params=None):
 def G_grad_beta_reparametrized(eta, params=None):
     nu = params['nu']
     return torch.digamma(eta * nu) - torch.digamma(nu)
+
+def G_grad_log_norm(eta, params=None):
+    return eta
 
 def G_grad_fun(family):
     if family == 'bernoulli':
@@ -274,6 +292,12 @@ def g_invert_beta_reparametrized(x, params=None):
         for j in range(x.shape[1])
     )).T
 
+def g_invert_log_normal(x, params=None):
+    nu = params['nu']
+    n_jobs = params['n_jobs'] if 'n_jobs' in params else 1
+
+    return torch.log(x.clip(LOG_NORMAL_ZERO_THRESHOLD))
+
 def g_invertfun(family):
     if family == 'bernoulli':
         return g_invert_bernoulli
@@ -293,6 +317,8 @@ def g_invertfun(family):
         return g_invert_beta
     elif family.lower() in ['beta_reparam', 'beta_rep']:
         return g_invert_beta_reparametrized
+    elif family.lower() in ['log_normal', 'log normal', 'lognorm']:
+        return g_invert_log_normal
 
 
 # Functions h
@@ -318,6 +344,9 @@ def h_negative_binomial(x, params=None):
 def h_beta(x, params=None):
     return 1 / (x * (1-x))
 
+def h_log_norm(x, params=None):
+    return 1 / (torch.sqrt(2*pi_val) * x)
+
 def h_fun(family):
     if family == 'bernoulli':
         return h_bernoulli
@@ -331,6 +360,8 @@ def h_fun(family):
         raise NotImplementedError('multinomial not implemented')
     elif family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep']:
         return h_negative_binomial
+    elif family.lower() in ['log_normal', 'log normal', 'lognorm']:
+        return h_log_norm
 
 
 def log_h_negative_binomial(x, params=None):
