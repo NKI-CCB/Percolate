@@ -215,7 +215,8 @@ def G_grad_beta_reparametrized(eta, params=None):
     return torch.digamma(eta * nu) - torch.digamma(nu)
 
 def G_grad_log_norm(eta, params=None):
-    return eta
+    nu = params['nu']
+    return eta / (nu**2)
 
 def G_grad_fun(family):
     if family == 'bernoulli':
@@ -236,6 +237,8 @@ def G_grad_fun(family):
         return G_grad_beta
     elif family.lower() in ['beta_reparam', 'beta_rep']:
         return G_grad_beta_reparametrized
+    elif family.lower() in ['log_normal', 'log normal', 'lognorm']:
+        return G_grad_log_norm
 
 # g_invert is the inverse of the derivative of A.
 def g_invert_bernoulli(x, params=None):
