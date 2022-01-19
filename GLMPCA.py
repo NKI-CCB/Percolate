@@ -11,6 +11,7 @@ import mctorch.optim as moptim
 from torch.utils.data import Dataset, TensorDataset, DataLoader
 from scipy.stats import beta as beta_dst
 from scipy.stats import lognorm
+from scipy.stats import gamma as gamma_dst
 
 from .negative_binomial_routines import compute_dispersion
 from .exponential_family import *
@@ -159,9 +160,6 @@ class GLMPCA:
         ).to(device)
 
         projected_orthogonal_scores_ = self.saturated_param_.matmul(self.saturated_loadings_).matmul(self.saturated_loadings_.T)
-        # projected_orthogonal_scores_ /= torch.linalg.norm(projected_orthogonal_scores_, axis=0)
-        # self.saturated_scores_ = projected_orthogonal_scores_.detach().numpy()
-        # self.sample_projection = True
 
         self.projected_orthogonal_scores_svd_ = torch.linalg.svd(projected_orthogonal_scores_, full_matrices=False)
         # Restrict to top components and return SVD in form U@S@V^T
@@ -306,6 +304,23 @@ class GLMPCA:
                 if self.exp_family_params is None:
                     self.exp_family_params = {}
                 self.exp_family_params['nu'] = torch.Tensor(nu_parameters)
+
+            saturated_param_ = g_invertfun(self.family)(X.cpu(), self.exp_family_params_cpu())
+
+        elif self.family.lower() in ['gamma']:
+            if exp_family_params is not None and 'nu' in exp_family_params:
+                nu_parameters = exp_family_params['nu'].clone()
+            else:
+                nu_parameters = Parallel(n_jobs=20, verbose=1)(
+                    delayed(gamma_dst.fit)(X_feat, loc=0) for X_feat in X.T
+                )
+                nu_parameters = torch.Tensor([1/e[2] for e in nu_parameters])
+
+            if save_family_params:
+                if self.exp_family_params is None:
+                    self.exp_family_params = {}
+                self.exp_family_params['nu'] = torch.Tensor(nu_parameters)
+                self.exp_family_params['n_jobs'] = 20 #self.n_jobs
 
             saturated_param_ = g_invertfun(self.family)(X.cpu(), self.exp_family_params_cpu())
 
