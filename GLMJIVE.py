@@ -213,8 +213,11 @@ class GLMJIVE:
         for d in self.data_types:
             noise_matrix = torch.Tensor(np.identity(self.factor_models[d].saturated_loadings_.shape[0])).to(device)
             noise_matrix = noise_matrix - self.factor_models[d].saturated_loadings_.matmul(self.factor_models[d].saturated_loadings_.T)
-            noise_matrix, _, _ = torch.linalg.svd(noise_matrix)
-            noise_matrix = noise_matrix[:,self.factor_models[d].n_pc:]
+            try:
+                noise_matrix, _, _ = torch.linalg.svd(noise_matrix)
+                noise_matrix = noise_matrix[:,self.factor_models[d].n_pc:]
+            except:
+                raise ValueError('NOISE MODEL CANNOT BE COMPUTED: SVD DID NOT CONVERGE')
             self.noise_models[d].saturated_loadings_ = noise_matrix
 
             self.noise_models[d].fill_GLMPCA_instances(
