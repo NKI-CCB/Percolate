@@ -68,7 +68,8 @@ class GLMPCA:
         family, 
         maxiter=1000, 
         max_param = 10,
-        learning_rate = 0.02
+        learning_rate = 0.02,
+        n_jobs=1
         ):
 
         self.n_pc = n_pc
@@ -78,6 +79,7 @@ class GLMPCA:
         self.max_param = np.abs(max_param)
         self.learning_rate_ = learning_rate
         self.initial_learning_rate_ = learning_rate
+        self.n_jobs = n_jobs
 
         self.saturated_loadings_ = None
         # saturated_intercept_: before projecting
@@ -226,8 +228,9 @@ class GLMPCA:
         return saturated_param_.detach()
 
 
-    def compute_saturated_params(self, X, with_intercept=True, exp_family_params=None, save_family_params=False):
+    def compute_saturated_params(self, X, with_intercept=True, exp_family_params=None, save_family_params=False, n_jobs=None):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        n_jobs = self.n_jobs if n_jobs is None else n_jobs
 
         if self.family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep']:
             # Load parameter if needed
@@ -265,10 +268,10 @@ class GLMPCA:
                 if self.exp_family_params is None:
                     self.exp_family_params = {}
                 self.exp_family_params['nu'] = nu
-                self.exp_family_params['n_jobs'] = 10 #self.n_jobs
+                self.exp_family_params['n_jobs'] = n_jobs
 
             if 'n_jobs' not in self.exp_family_params:
-                self.exp_family_params['n_jobs'] = 40
+                self.exp_family_params['n_jobs'] = n_jobs
 
             saturated_param_ = g_invertfun(self.family)(X.cpu(), self.exp_family_params_cpu())
 
@@ -285,17 +288,17 @@ class GLMPCA:
                 if self.exp_family_params is None:
                     self.exp_family_params = {}
                 self.exp_family_params['beta'] = torch.Tensor(beta_parameters)
-                self.exp_family_params['n_jobs'] = 10 #self.n_jobs
+                self.exp_family_params['n_jobs'] = n_jobs
 
             if 'n_jobs' not in self.exp_family_params:
-                self.exp_family_params['n_jobs'] = 40
+                self.exp_family_params['n_jobs'] = n_jobs
             saturated_param_ = g_invertfun(self.family)(X.cpu(), self.exp_family_params_cpu())
 
         elif self.family.lower() in ['log_normal', 'log normal', 'lognorm']:
             if exp_family_params is not None and 'nu' in exp_family_params:
                 nu_parameters = exp_family_params['nu'].clone()
             else:
-                nu_parameters = Parallel(n_jobs=20, verbose=1)(
+                nu_parameters = Parallel(n_jobs=n_jobs, verbose=1)(
                     delayed(lognorm.fit)(X_feat, loc=0) for X_feat in X.T
                 )
                 nu_parameters = torch.Tensor([e[0] for e in nu_parameters])
@@ -311,7 +314,7 @@ class GLMPCA:
             if exp_family_params is not None and 'nu' in exp_family_params:
                 nu_parameters = exp_family_params['nu'].clone()
             else:
-                nu_parameters = Parallel(n_jobs=20, verbose=1)(
+                nu_parameters = Parallel(n_jobs=n_jobs, verbose=1)(
                     delayed(gamma_dst.fit)(X_feat, loc=0) for X_feat in X.T
                 )
                 nu_parameters = torch.Tensor([1/e[2] for e in nu_parameters])
@@ -320,7 +323,7 @@ class GLMPCA:
                 if self.exp_family_params is None:
                     self.exp_family_params = {}
                 self.exp_family_params['nu'] = torch.Tensor(nu_parameters)
-                self.exp_family_params['n_jobs'] = 20 #self.n_jobs
+                self.exp_family_params['n_jobs'] = n_jobs
 
             saturated_param_ = g_invertfun(self.family)(X.cpu(), self.exp_family_params_cpu())
 
@@ -365,7 +368,8 @@ class GLMPCA:
             self.family, 
             maxiter=self.maxiter, 
             max_param=self.max_param,
-            learning_rate=self.learning_rate_
+            learning_rate=self.learning_rate_,
+            n_jobs=self.n_jobs
         )
         glmpca_clf.saturated_intercept_ = self.saturated_intercept_.clone().detach()
         glmpca_clf.reconstruction_intercept_ = self.reconstruction_intercept_.clone().detach()

@@ -23,6 +23,7 @@ def compute_gamma_saturated_params(nu, x, eps=10**(-6), maxiter=100):
 
         iter_idx += 1
         if iter_idx > maxiter:
+            print('CONVERGENCE NOT REACHED FOR GAMMA. LAST VALUE: %1.3f'%(compute_constraint(theta, nu, x)))
             break
 
     return theta

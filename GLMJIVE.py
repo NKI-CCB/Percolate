@@ -23,7 +23,8 @@ class GLMJIVE:
         max_param=None,
         learning_rates=None,
         batch_size=None, 
-        n_glmpca_init=None
+        n_glmpca_init=None,
+        n_jobs=1
         ):
         """
          Method can be 'svd' or 'likelihood'.
@@ -47,6 +48,9 @@ class GLMJIVE:
 
         self.factor_models = {}
         self.joint_models = {}
+
+        # For parallelization
+        self.n_jobs = n_jobs
 
 
     def fit(self, X, no_alignment=False, exp_family_params=None):
@@ -116,7 +120,8 @@ class GLMJIVE:
                 family=self.families[data_type], 
                 maxiter=self.maxiter[data_type], 
                 max_param=self.max_param[data_type],
-                learning_rate=self.learning_rates[data_type]
+                learning_rate=self.learning_rates[data_type],
+                n_jobs=self.n_jobs
             )
 
             self.factor_models[data_type].compute_saturated_loadings(
@@ -217,7 +222,8 @@ class GLMJIVE:
                 noise_matrix, _, _ = torch.linalg.svd(noise_matrix)
                 noise_matrix = noise_matrix[:,self.factor_models[d].n_pc:]
             except:
-                raise ValueError('NOISE MODEL CANNOT BE COMPUTED: SVD DID NOT CONVERGE')
+                print('NOISE MODEL CANNOT BE COMPUTED: SVD DID NOT CONVERGE')
+                #raise ValueError('NOISE MODEL CANNOT BE COMPUTED: SVD DID NOT CONVERGE')
             self.noise_models[d].saturated_loadings_ = noise_matrix
 
             self.noise_models[d].fill_GLMPCA_instances(

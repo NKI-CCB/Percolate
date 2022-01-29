@@ -65,7 +65,7 @@ def compute_mu(nu, x, eps=10**(-6), maxiter=1000):
         current_value = log_part_grad_zero_reparam(mu, nu, x)
 
         if iter_idx > maxiter:
-            print('DID NOT CONVERGE WITH LOG PART AT %s'%(current_value))
+            print('CONVERGENCE NOT REACHED FOR BETA REPARAM. LAST VALUE: %1.3f'%(current_value))
             break
         iter_idx += 1
     return mu
