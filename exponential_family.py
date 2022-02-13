@@ -329,7 +329,7 @@ def g_invert_gamma(x, params=None):
     # TO COMPUTE
     
     return torch.Tensor(Parallel(n_jobs=n_jobs, verbose=10)(
-        delayed(compute_gamma_saturated_params_gene)(nu[j], x[:,j], eps=10**(-6), maxiter=100)
+        delayed(compute_gamma_saturated_params_gene)(nu[j], x[:,j].clip(GAMMA_ZERO_THRESHOLD), eps=10**(-6), maxiter=100)
         for j in range(x.shape[1])
     )).T
 

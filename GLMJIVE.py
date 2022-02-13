@@ -112,29 +112,42 @@ class GLMJIVE:
         self.orthogonal_scores = []
         self.data_types = list(X.keys())
         exp_family_params = exp_family_params if exp_family_params is not None else {data_type:None for data_type in X}
-        for data_type in self.data_types:
-            print('START TYPE %s'%(data_type))
+        
+        # self.factor_models = dict(Parallel(n_jobs=2, verbose=1)(
+        #     delayed(self._train_one_glmpca_instance)(data_type, X, exp_family_params)
+        #     for data_type in self.data_types
+        # ))
+        self.factor_models = dict([
+            self._train_one_glmpca_instance(data_type, X, exp_family_params)
+            for data_type in self.data_types
+        ])
 
-            self.factor_models[data_type] = GLMPCA(
-                self.n_factors[data_type], 
-                family=self.families[data_type], 
-                maxiter=self.maxiter[data_type], 
-                max_param=self.max_param[data_type],
-                learning_rate=self.learning_rates[data_type],
-                n_jobs=self.n_jobs
-            )
-
-            self.factor_models[data_type].compute_saturated_loadings(
-                X[data_type],
-                batch_size=self.batch_size[data_type], 
-                n_init=self.n_glmpca_init[data_type],
-                exp_family_params=exp_family_params[data_type]
-            )
-            self.orthogonal_scores.append(
-                self.factor_models[data_type].compute_saturated_orthogonal_scores(X[data_type], correct_loadings=False)
-            )
+        self.orthogonal_scores = [
+            self.factor_models[data_type].compute_saturated_orthogonal_scores(X[data_type], correct_loadings=False)
+            for data_type in self.factor_models
+        ]
 
         return True
+
+    def _train_one_glmpca_instance(self, data_type, X, exp_family_params):
+
+        glmpca_clf = GLMPCA(
+            self.n_factors[data_type], 
+            family=self.families[data_type], 
+            maxiter=self.maxiter[data_type], 
+            max_param=self.max_param[data_type],
+            learning_rate=self.learning_rates[data_type],
+            n_jobs=self.n_jobs
+        )
+
+        glmpca_clf.compute_saturated_loadings(
+            X[data_type],
+            batch_size=self.batch_size[data_type], 
+            n_init=self.n_glmpca_init[data_type],
+            exp_family_params=exp_family_params[data_type]
+        )
+
+        return (data_type, glmpca_clf)
 
 
     def _aggregate_scores(self):
@@ -151,7 +164,7 @@ class GLMJIVE:
         self.individual_models = {k:difference_GLMPCA.clone_from_GLMPCA(self.factor_models[k]) for k in X}
         self.noise_models = {k:ResidualGLMPCA.clone_from_GLMPCA(self.factor_models[k]) for k in X}
 
-    def _computation_joint_individual_factor_model(self, X):
+    def _computation_joint_individual_factor_model(self, X=None):
         # Set up GPU device
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -314,10 +327,11 @@ class GLMJIVE:
             return self.noise_models[data_source].project_cell_view(X)
 
 
-    def estimate_number_joint_components_random_matrix(self, n_iter=20, quantile_top_component=0.95):
+    def estimate_number_joint_components_random_matrix(self, n_iter=20, quantile_top_component=0.95, n_jobs=1):
         # Generate random orthogonal matrices
-        random_state = np.random.randint(1,10**9,size=2)
-        random_orth_mat = np.array(Parallel(n_jobs=2, verbose=0)(
+        random_state = np.random.randint(1,10**6,size=2)
+        print(random_state)
+        random_orth_mat = np.array(Parallel(n_jobs=min(n_jobs,2), verbose=1)(
             delayed(ortho_group.rvs)(np.max(score.shape), n_iter, random_state=seed)
             for score, seed in zip(self.orthogonal_scores, random_state)
         )).transpose(1,0,2,3)
