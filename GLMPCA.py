@@ -69,6 +69,8 @@ class GLMPCA:
         maxiter=1000, 
         max_param = 10,
         learning_rate = 0.02,
+        batch_size=128,
+        n_init=1,
         n_jobs=1
         ):
 
@@ -80,6 +82,8 @@ class GLMPCA:
         self.learning_rate_ = learning_rate
         self.initial_learning_rate_ = learning_rate
         self.n_jobs = n_jobs
+        self.batch_size = batch_size
+        self.n_init = n_init
 
         self.saturated_loadings_ = None
         # saturated_intercept_: before projecting
@@ -101,6 +105,8 @@ class GLMPCA:
         """
         # Set device
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.batch_size = batch_size if batch_size is not None else self.batch_size
+        self.n_init = n_init if n_init is not None else self.n_init
         
         if exp_family_params is not None:
             self.exp_family_params = exp_family_params
@@ -145,7 +151,7 @@ class GLMPCA:
         return self.saturated_loadings_
 
 
-    def compute_saturated_orthogonal_scores(self, X, correct_loadings=False):
+    def compute_saturated_orthogonal_scores(self, X=None, correct_loadings=False):
         """
         Compute low-rank sample-level orthogonal projection of saturated parameters.
         If correct_loadings, align loadings to have perfect match with scores
@@ -154,12 +160,13 @@ class GLMPCA:
             self.compute_saturated_loadings(X)
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.saturated_param_ = self.compute_saturated_params(
-            X, 
-            with_intercept=True, 
-            exp_family_params=self.exp_family_params,
-            save_family_params=False
-        ).to(device)
+        if X is not None:
+            self.saturated_param_ = self.compute_saturated_params(
+                X, 
+                with_intercept=True, 
+                exp_family_params=self.exp_family_params,
+                save_family_params=False
+            ).to(device)
 
         projected_orthogonal_scores_ = self.saturated_param_.matmul(self.saturated_loadings_).matmul(self.saturated_loadings_.T)
 
@@ -518,15 +525,15 @@ class GLMPCA:
         }
         dump(parameters, open('%s/params.pkl'%(folder), 'wb'))
         
-        if hasattr(self, 'saturated_loadings_'):
+        if hasattr(self, 'saturated_loadings_') and self.saturated_loadings_ is not None:
             torch.save(self.saturated_loadings_.cpu(), '%s/saturated_loadings_.pt'%(folder))
-        if hasattr(self, 'saturated_intercept_'):
+        if hasattr(self, 'saturated_intercept_') and self.saturated_intercept_ is not None:
             torch.save(self.saturated_intercept_.cpu(), '%s/saturated_intercept_.pt'%(folder))
-        if hasattr(self, 'saturated_scores_'):
+        if hasattr(self, 'saturated_scores_') and self.saturated_scores_ is not None:
             torch.save(self.saturated_scores_.cpu(), '%s/saturated_scores_.pt'%(folder))
-        if hasattr(self, 'exp_family_params'):
+        if hasattr(self, 'exp_family_params') and self.exp_family_params is not None:
             dump(self.exp_family_params, open('%s/exp_family_params.pkl'%(folder), 'wb'))
-        if hasattr(self, 'projected_orthogonal_scores_svd_'):
+        if hasattr(self, 'projected_orthogonal_scores_svd_') and self.projected_orthogonal_scores_svd_ is not None:
             dump(
                 [x.cpu() for x in self.projected_orthogonal_scores_svd_], 
                 open('%s/projected_orthogonal_scores_svd.pkl'%(folder), 'wb')

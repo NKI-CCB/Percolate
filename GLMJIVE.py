@@ -164,7 +164,7 @@ class GLMJIVE:
         self.individual_models = {k:difference_GLMPCA.clone_from_GLMPCA(self.factor_models[k]) for k in X}
         self.noise_models = {k:ResidualGLMPCA.clone_from_GLMPCA(self.factor_models[k]) for k in X}
 
-    def _computation_joint_individual_factor_model(self, X=None):
+    def _computation_joint_individual_factor_model(self, X=None, not_aligned_types=[]):
         # Set up GPU device
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -190,6 +190,8 @@ class GLMJIVE:
         print('START JOINT MODEL', flush=True)
         self.joint_scores_contribution_ = {}       
         for d in self.data_types:
+            if d in not_aligned_types:
+                continue
             self.joint_models[d].n_pc = self.n_joint
             rotation = torch.linalg.svd(self.factor_models[d].saturated_scores_.T.matmul(self.joint_scores_), full_matrices=False)
             self.joint_models[d].saturated_loadings_ = self.factor_models[d].saturated_loadings_.matmul(
@@ -212,6 +214,8 @@ class GLMJIVE:
         # Set up individual by computing the difference
         print('START INDIVIDUAL MODEL', flush=True)
         for d in self.data_types:
+            if d in not_aligned_types:
+                continue
             indiv_matrix = torch.Tensor(np.identity(self.joint_scores_.shape[0])).to(device)
             indiv_matrix = indiv_matrix - self.joint_scores_.matmul(self.joint_scores_.T)
             indiv_matrix, _, _ = torch.linalg.svd(indiv_matrix)
@@ -229,6 +233,8 @@ class GLMJIVE:
         # Set up individual
         print('START NOISE MODEL', flush=True)
         for d in self.data_types:
+            if d in not_aligned_types:
+                continue
             noise_matrix = torch.Tensor(np.identity(self.factor_models[d].saturated_loadings_.shape[0])).to(device)
             noise_matrix = noise_matrix - self.factor_models[d].saturated_loadings_.matmul(self.factor_models[d].saturated_loadings_.T)
             try:
@@ -278,7 +284,12 @@ class GLMJIVE:
         """
 
         X_known = self.joint_scores_contribution_[self.known_data_type].detach().numpy()
-        X_unknown = self.joint_scores_contribution_[self.unknown_data_type][:,unknown_factor_idx].detach().numpy()
+
+        # If the unknown data-type has not been aligned, then look at the difference.
+        if self.unknown_data_type in self.joint_scores_contribution_:
+            X_unknown = self.joint_scores_contribution_[self.unknown_data_type][:,unknown_factor_idx].detach().numpy()
+        else:
+            X_unknown = (self.joint_scores_ - self.joint_scores_contribution_[self.known_data_type]).detach().numpy()[:,unknown_factor_idx]
 
         param_grid = {
             'regression__n_neighbors': np.linspace(2,20,19).astype(int),
@@ -395,6 +406,9 @@ class GLMJIVE:
         return deepcopy(self)
 
     def save(self, folder):
+        if not os.path.isdir(folder):
+            os.mkdir(folder)
+
         # Save parameters
         GLMJIVE_params = {
             'n_factors': self.n_factors,
