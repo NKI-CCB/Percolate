@@ -269,7 +269,7 @@ class GLMJIVE:
 
         # Predict unknown_data
         U_unknown = torch.Tensor([
-            self.trans_type_regressors_[joint_factor_idx].predict(U_known.detach().numpy())
+            self.trans_type_regressors_[joint_factor_idx].predict(U_known.detach().cpu().numpy())
             for joint_factor_idx in range(self.n_joint)
         ]).T
 
@@ -283,13 +283,13 @@ class GLMJIVE:
         Train a kNN regression model from the known data-type to the unknown data-type.
         """
 
-        X_known = self.joint_scores_contribution_[self.known_data_type].detach().numpy()
+        X_known = self.joint_scores_contribution_[self.known_data_type].detach().cpu().numpy()
 
         # If the unknown data-type has not been aligned, then look at the difference.
         if self.unknown_data_type in self.joint_scores_contribution_:
-            X_unknown = self.joint_scores_contribution_[self.unknown_data_type][:,unknown_factor_idx].detach().numpy()
+            X_unknown = self.joint_scores_contribution_[self.unknown_data_type][:,unknown_factor_idx].detach().cpu().numpy()
         else:
-            X_unknown = (self.joint_scores_ - self.joint_scores_contribution_[self.known_data_type]).detach().numpy()[:,unknown_factor_idx]
+            X_unknown = (self.joint_scores_ - self.joint_scores_contribution_[self.known_data_type]).detach().cpu().numpy()[:,unknown_factor_idx]
 
         param_grid = {
             'regression__n_neighbors': np.linspace(2,20,19).astype(int),
@@ -362,13 +362,13 @@ class GLMJIVE:
 
         # Compute resulting top singular values
         random_svd_value = np.array([
-            torch.linalg.svd(torch.cat(mat, axis=1))[1].detach().numpy()
+            torch.linalg.svd(torch.cat(mat, axis=1))[1].detach().cpu().numpy()
             for mat in random_orth_mat
         ])
 
         # Compute number of joint components as the components above the 95% top random singular values
         number_joint = torch.sum(torch.linalg.svd(self.M_)[1] > np.quantile(random_svd_value[:,0],quantile_top_component))
-        number_joint = number_joint.detach().numpy()
+        number_joint = number_joint.detach().cpu().numpy()
         return int(number_joint)
 
 
