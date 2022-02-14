@@ -103,6 +103,9 @@ class PERCOLATE:
         """
         One percolation iteration
         """
+        # Set up GPU device
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
         percolate_iter_clf = GLMJIVE(
             n_factors={
                 self.robust_types_order[iter_idx]: self.n_factors[self.robust_types_order[iter_idx]], 
@@ -122,8 +125,8 @@ class PERCOLATE:
 
         # Perform alignment using the structure of GLMJIVE code
         percolate_iter_clf.orthogonal_scores = [
-            self.robust_orthogonal_scores[self.robust_types_order[iter_idx]],
-            predictive_scores
+            self.robust_orthogonal_scores[self.robust_types_order[iter_idx]].to(device),
+            predictive_scores.to(device)
         ]
         percolate_iter_clf.data_types = [self.robust_types_order[iter_idx], self.predictive_key]
         percolate_iter_clf._aggregate_scores()

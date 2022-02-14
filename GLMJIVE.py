@@ -173,7 +173,7 @@ class GLMJIVE:
 
         # Compute individual scores by taking the rest of the glmpca signal
         joint_proj = self.joint_scores_.matmul(self.joint_scores_.T)
-        individual_proj = torch.eye(self.joint_scores_.shape[0]) - joint_proj
+        individual_proj = torch.eye(self.joint_scores_.shape[0]).to(device) - joint_proj.to(device)
         self.individual_scores_ = {}
         for score, dt in zip(self.orthogonal_scores, self.data_types):
             individual_svd = torch.linalg.svd(individual_proj.matmul(score))
