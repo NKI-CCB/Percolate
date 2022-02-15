@@ -134,8 +134,10 @@ class PERCOLATE:
             self.robust_types_order[iter_idx]: data_df[self.robust_types_order[iter_idx]],
             self.predictive_key: data_df[self.predictive_key]
         })
-        percolate_iter_clf.n_joint = percolate_iter_clf.estimate_number_joint_components_random_matrix(
-            n_iter=self.joint_estimation_n_iter, n_jobs=self.n_jobs, quantile_top_component=0.90
+
+        
+        percolate_iter_clf.n_joint = percolate_iter_clf.estimate_number_joint_components_permutation(
+            n_perm=self.joint_estimation_n_iter, quantile_top_component=0.67
         )
         percolate_iter_clf._computation_joint_individual_factor_model(not_aligned_types=self.predictive_key)
 

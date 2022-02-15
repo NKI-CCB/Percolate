@@ -341,7 +341,6 @@ class GLMJIVE:
     def estimate_number_joint_components_random_matrix(self, n_iter=20, quantile_top_component=0.95, n_jobs=1):
         # Generate random orthogonal matrices
         random_state = np.random.randint(1,10**6,size=2)
-        print(random_state)
         random_orth_mat = np.array(Parallel(n_jobs=min(n_jobs,2), verbose=1)(
             delayed(ortho_group.rvs)(np.max(score.shape), n_iter, random_state=seed)
             for score, seed in zip(self.orthogonal_scores, random_state)
@@ -372,32 +371,43 @@ class GLMJIVE:
         return int(number_joint)
 
 
-    def estimate_number_joint_components_permutation(self, X, n_perm=20):
+    def estimate_number_joint_components_permutation(self, n_perm=20, quantile_top_component=0.95):
         """
         max_joint: int or float
             If float, proportion of the minimum number of components.
         """
-        self.data_types = list(X.keys())
         self.permuted_M_ = []
         self.permuted_M_svd_ = []
 
         for perm_idx in range(n_perm):
             # Permute data
-            source_idx = np.arange(X[self.data_types[0]].shape[0])
+            source_idx = np.arange(self.M_.shape[0])
+            target_idx = np.arange(self.M_.shape[0])
             np.random.shuffle(source_idx)
-            perm_data = deepcopy(X)
-            perm_data[self.data_types[0]] = X[self.data_types[0]][source_idx]
+            np.random.shuffle(target_idx)
 
             # Train instance
-            self.fit(perm_data, no_alignment=True)
+            self.permuted_M_svd_.append(torch.cat([
+                self.orthogonal_scores[0][source_idx],
+                self.orthogonal_scores[1][target_idx]
+            ], axis=1))
+            self.permuted_M_svd_[-1] = torch.linalg.svd(self.permuted_M_svd_[-1])[1][0]
 
-            # Save resulting M
-            self.permuted_M_.append(self.M_)
-            self.permuted_M_svd_.append(self.M_svd_)
 
-        # Train instance
-        self._train_glmpca_instances(X)
-        self._aggregate_scores()
+        self.permuted_M_svd_ = torch.Tensor(self.permuted_M_svd_)
+        number_joint = torch.sum(torch.linalg.svd(self.M_)[1] > np.quantile(self.permuted_M_svd_, quantile_top_component))
+        number_joint = number_joint.detach().cpu().numpy()
+        return int(number_joint)
+
+        #     self.fit(perm_data, no_alignment=True)
+
+        #     # Save resulting M
+        #     self.permuted_M_.append(self.M_)
+        #     self.permuted_M_svd_.append(self.M_svd_)
+
+        # # Train instance
+        # self._train_glmpca_instances(X)
+        # self._aggregate_scores()
 
         return True
 
