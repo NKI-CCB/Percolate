@@ -99,7 +99,7 @@ class GLMPCA:
         self.loadings_learning_rates_ = []
 
 
-    def compute_saturated_loadings(self, X, exp_family_params=None, batch_size=128, n_init=1):
+    def compute_saturated_loadings(self, X, exp_family_params=None, batch_size=None, n_init=None):
         """
         Compute low-rank feature-level projection of saturated parameters.
         """
@@ -122,11 +122,11 @@ class GLMPCA:
         self.loadings_learning_rates_ = []
         print('PARAMS ARE:')
         print(self.exp_family_params)
-        if n_init == 1:
+        if self.n_init == 1:
             self.saturated_loadings_, self.saturated_intercept_ = self._saturated_loading_iter(
                 self.saturated_param_, 
                 X[:,self.exp_family_params['gene_filter']] if self.family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep'] else X,
-                batch_size=batch_size
+                batch_size=self.batch_size
             )
         else:
             # Perform several initializations and select the top ones.
@@ -134,9 +134,9 @@ class GLMPCA:
                 self._saturated_loading_iter(
                     self.saturated_param_, 
                     X[:,self.exp_family_params['gene_filter']] if self.family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep'] else X,
-                    batch_size=batch_size,
+                    batch_size=self.batch_size,
                     return_train_likelihood=True
-                ) for _ in range(n_init)
+                ) for _ in range(self.n_init)
             ]
             self.iter_likelihood_results_ = [e[-1].cpu().detach().numpy() for e in init_results]
             self.optimal_iter_arg_ = np.argmin(self.iter_likelihood_results_)
