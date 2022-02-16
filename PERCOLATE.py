@@ -84,7 +84,7 @@ class PERCOLATE:
         for iter_idx, robust_key in enumerate(self.robust_types_order):
             print('\tSTART %s'%(robust_key))
             self.percolate_iter_clfs[robust_key], residual_ge = self._iter_percolate(iter_idx, self.predictive_scores_residuals_[iter_idx], data_df)
-            self.predictive_scores_residuals_.append(residual_ge)
+            self.predictive_scores_residuals_.append(deepcopy(residual_ge.detach()))
             self.percolate_iter_clfs[robust_key].set_out_of_sample_extension(robust_key)
             
         return self
@@ -135,11 +135,11 @@ class PERCOLATE:
             self.predictive_key: data_df[self.predictive_key]
         })
 
-        
+
         percolate_iter_clf.n_joint = percolate_iter_clf.estimate_number_joint_components_permutation(
             n_perm=self.joint_estimation_n_iter, quantile_top_component=0.67
         )
-        percolate_iter_clf._computation_joint_individual_factor_model(not_aligned_types=self.predictive_key)
+        percolate_iter_clf._computation_joint_individual_factor_model(not_aligned_types=[self.predictive_key])
 
         indiv_proj = torch.eye(percolate_iter_clf.joint_scores_.shape[0]).to(device)
         indiv_proj -= percolate_iter_clf.joint_scores_.matmul(percolate_iter_clf.joint_scores_.T).to(device)

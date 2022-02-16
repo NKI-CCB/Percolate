@@ -358,6 +358,10 @@ class GLMPCA:
         return saturated_params.matmul(self.saturated_loadings_)
 
 
+    def project_low_rank_from_saturated_parameters(self, saturated_params):
+        return saturated_params.matmul(self.saturated_loadings_)
+
+
     def project_cell_view(self, X):
         projected_saturated_param_ = self.compute_projected_saturated_params(
             X, 

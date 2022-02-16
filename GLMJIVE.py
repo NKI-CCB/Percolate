@@ -253,6 +253,27 @@ class GLMJIVE:
         return True
 
 
+    def compute_joint_signal_from_saturated_params(self, saturated_params, return_decomposition=False):
+
+        # Project data
+        if type(saturated_params) is dict:
+            U_known = self.joint_models[self.known_data_type].project_low_rank_from_saturated_parameters(
+                saturated_params[self.known_data_type]
+            )
+        else:
+            U_known = self.joint_models[self.known_data_type].project_low_rank_from_saturated_parameters(saturated_params)
+
+        # Predict unknown_data
+        U_unknown = torch.Tensor([
+            self.trans_type_regressors_[joint_factor_idx].predict(U_known.detach().cpu().numpy())
+            for joint_factor_idx in range(self.n_joint)
+        ]).T
+
+        if return_decomposition:
+            return U_known , U_unknown
+        return U_known + U_unknown
+
+
     def compute_joint_signal(self, X, return_decomposition=False):
         """
         Given a sample of self.known_data:
