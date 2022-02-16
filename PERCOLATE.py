@@ -145,7 +145,7 @@ class PERCOLATE:
         indiv_proj -= percolate_iter_clf.joint_scores_.matmul(percolate_iter_clf.joint_scores_.T).to(device)
         remainder_predictive = indiv_proj.matmul(predictive_scores.to(device))
         remainder_predictive_scores = torch.linalg.svd(remainder_predictive, full_matrices=False)
-        remainder_predictive_scores = remainder_predictive_scores[0][:,remainder_predictive_scores[1]>0.9]
+        remainder_predictive_scores = remainder_predictive_scores[0].matmul(torch.diag(remainder_predictive_scores[1]))
         
         return percolate_iter_clf, remainder_predictive_scores
 
