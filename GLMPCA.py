@@ -45,7 +45,7 @@ def _create_saturated_loading_optim(parameters, data, n_pc, family, learning_rat
     )
     # optimizer = moptim.ConjugateGradient(params = [loadings, intercept], lr=learning_rate)
     optimizer = moptim.rAdagrad(params = [loadings, intercept], lr=learning_rate)
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.9)
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
 
     return optimizer, cost, loadings, intercept, lr_scheduler
 
@@ -55,7 +55,7 @@ def _create_saturated_scores_projection_optim(parameters, data, n_pc, family, le
     cost = make_saturated_sample_proj_cost(family, parameters, data, max_value)
     # optimizer = moptim.ConjugateGradient(params=[scores], lr=learning_rate)
     optimizer = moptim.rAdagrad(params=[scores], lr=learning_rate)
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.9)
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
 
     return optimizer, cost, scores, lr_scheduler
 
