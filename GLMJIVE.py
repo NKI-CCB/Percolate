@@ -4,6 +4,8 @@ from copy import deepcopy
 from sklearn.model_selection import GridSearchCV, KFold
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.pipeline import Pipeline
+from sklearn.kernel_ridge import KernelRidge
+from sklearn.preprocessing import StandardScaler
 from scipy.stats import ortho_group
 from joblib import Parallel, delayed
 from pickle import load, dump
@@ -299,7 +301,7 @@ class GLMJIVE:
         return U_known + U_unknown
         
 
-    def _train_trans_type_regression_model(self, unknown_factor_idx, cv=10, n_jobs=1):
+    def _train_trans_type_regression_model(self, unknown_factor_idx, cv=10, n_jobs=1, method='knn'):
         """
         Train a kNN regression model from the known data-type to the unknown data-type.
         """
@@ -312,23 +314,36 @@ class GLMJIVE:
         else:
             X_unknown = (self.joint_scores_ - self.joint_scores_contribution_[self.known_data_type]).detach().cpu().numpy()[:,unknown_factor_idx]
 
-        param_grid = {
-            'regression__n_neighbors': np.linspace(2,20,19).astype(int),
-            'regression__weights': ['uniform', 'distance']
-        }
+        if method == 'knn':
+            param_grid = {
+                'regression__n_neighbors': np.linspace(2,20,19).astype(int),
+                'regression__weights': ['uniform', 'distance']
+            }
 
-        # GridSearch by cross-validation
-        imputation_model_ = GridSearchCV(
-            Pipeline([
-                ('regression', KNeighborsRegressor())
-            ]),
-            cv=cv,
-            n_jobs=n_jobs,
-            pre_dispatch='1.2*n_jobs',
-            param_grid=param_grid,
-            verbose=1,
-            scoring='neg_mean_squared_error'
-        )
+            # GridSearch by cross-validation
+            imputation_model_ = GridSearchCV(
+                Pipeline([
+                    ('regression', KNeighborsRegressor())
+                ]),
+                cv=cv,
+                n_jobs=n_jobs,
+                pre_dispatch='1.2*n_jobs',
+                param_grid=param_grid,
+                verbose=1,
+                scoring='neg_mean_squared_error'
+            )
+        elif method == 'krr':
+            alpha_values = np.logspace(-5,0,20)
+            gamma_values = np.logspace(-2, 0, 10)
+            param_grid ={'regression__alpha': alpha_values, 'regression__gamma': gamma_values}
+            pipeline = Pipeline([
+                ('normalization', StandardScaler(with_mean=True, with_std=True)),
+                ('regression', KernelRidge(kernel='rbf'))
+            ])
+            imputation_model_ = GridSearchCV(
+                pipeline, 
+                cv=cv, n_jobs=n_jobs, param_grid=param_grid, verbose=1, scoring='neg_mean_squared_error', pre_dispatch='1.2*n_jobs',
+            )
 
         return imputation_model_.fit(X_known, X_unknown)
 

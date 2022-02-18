@@ -99,7 +99,7 @@ class GLMPCA:
         self.loadings_learning_rates_ = []
 
 
-    def compute_saturated_loadings(self, X, exp_family_params=None, batch_size=None, n_init=None):
+    def compute_saturated_loadings(self, X, exp_family_params=None, batch_size=None, n_init=None, saturated_params=None):
         """
         Compute low-rank feature-level projection of saturated parameters.
         """
@@ -110,12 +110,16 @@ class GLMPCA:
         
         if exp_family_params is not None:
             self.exp_family_params = exp_family_params
-        self.saturated_param_ = self.compute_saturated_params(
-            X, 
-            with_intercept=False, 
-            exp_family_params=self.exp_family_params, 
-            save_family_params=True
-        ).to(device)
+
+        if saturated_params is None:
+            self.saturated_param_ = self.compute_saturated_params(
+                X, 
+                with_intercept=False, 
+                exp_family_params=self.exp_family_params, 
+                save_family_params=True
+            ).to(device)
+        else:
+            self.saturated_param_ = saturated_params
 
         self.learning_rate_ = self.initial_learning_rate_
         self.loadings_learning_scores_ = []
