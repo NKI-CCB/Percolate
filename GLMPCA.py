@@ -20,7 +20,10 @@ from .log_normal import LOG_NORMAL_ZERO_THRESHOLD
 LEARNING_RATE_LIMIT = 10**(-20)
 
 
-def _create_saturated_loading_optim(parameters, data, n_pc, family, learning_rate, max_value=np.inf, exp_family_params=None):
+def _create_saturated_loading_optim(
+    parameters, data, n_pc, family, 
+    learning_rate, max_value=np.inf, exp_family_params=None, step_size=20, gamma=0.5
+    ):
     loadings = mnn.Parameter(manifold=mnn.Stiefel(parameters.shape[1], n_pc))
     intercept = mnn.Parameter(
         data=torch.mean(parameters, axis=0),
@@ -45,7 +48,7 @@ def _create_saturated_loading_optim(parameters, data, n_pc, family, learning_rat
     )
     # optimizer = moptim.ConjugateGradient(params = [loadings, intercept], lr=learning_rate)
     optimizer = moptim.rAdagrad(params = [loadings, intercept], lr=learning_rate)
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
     return optimizer, cost, loadings, intercept, lr_scheduler
 
@@ -70,6 +73,8 @@ class GLMPCA:
         max_param = 10,
         learning_rate = 0.02,
         batch_size=128,
+        step_size=20,
+        gamma=0.5,
         n_init=1,
         n_jobs=1
         ):
@@ -84,6 +89,8 @@ class GLMPCA:
         self.n_jobs = n_jobs
         self.batch_size = batch_size
         self.n_init = n_init
+        self.gamma = gamma
+        self.step_size = step_size
 
         self.saturated_loadings_ = None
         # saturated_intercept_: before projecting
@@ -384,7 +391,9 @@ class GLMPCA:
             maxiter=self.maxiter, 
             max_param=self.max_param,
             learning_rate=self.learning_rate_,
-            n_jobs=self.n_jobs
+            n_jobs=self.n_jobs,
+            gamma=self.gamma,
+            step_size=self.step_size
         )
         glmpca_clf.saturated_intercept_ = self.saturated_intercept_.clone().detach()
         glmpca_clf.reconstruction_intercept_ = self.reconstruction_intercept_.clone().detach()
@@ -412,7 +421,9 @@ class GLMPCA:
             self.family,
             self.learning_rate_,
             self.max_param,
-            self.exp_family_params
+            self.exp_family_params,
+            gamma=self.gamma,
+            step_size=self.step_size
         )
 
         _loadings = _loadings.to(device)
