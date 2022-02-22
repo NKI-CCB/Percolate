@@ -201,7 +201,8 @@ def G_grad_bernoulli(eta, params=None):
     return 1./(1.+torch.exp(-eta))
 
 def G_grad_continuous_bernoulli(eta, params=None):
-    return (torch.exp(-eta)+eta-1)/(eta * (1-torch.exp(-eta)))
+    return torch.exp(eta) / (torch.exp(eta) - 1) - 1 / eta
+    # return (torch.exp(-eta)+eta-1)/(eta * (1-torch.exp(-eta)))
 
 def G_grad_poisson(eta, params=None):
     return torch.exp(eta)
@@ -463,12 +464,13 @@ def make_saturated_loading_cost(family, max_value=np.inf, params=None):
 
         # Project saturated parameters
         eta = torch.matmul(parameters - intercept, torch.matmul(X, X.T)) + intercept
+        eta = eta.clip(-max_value, max_value)
         
         # Compute the log-partition on projected parameters
         c = loss(eta, params)
         c = torch.sum(c)
 
-        # Second term (with potential parametrization)
+        # Second term (with potential parametrization)\
         d = exp_term_fun(data, eta, inner_params)
         d = torch.sum(d)
         return c - d
