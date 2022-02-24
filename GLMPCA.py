@@ -131,8 +131,7 @@ class GLMPCA:
         self.learning_rate_ = self.initial_learning_rate_
         self.loadings_learning_scores_ = []
         self.loadings_learning_rates_ = []
-        print('PARAMS ARE:')
-        print(self.exp_family_params)
+        
         if self.n_init == 1:
             self.saturated_loadings_, self.saturated_intercept_ = self._saturated_loading_iter(
                 self.saturated_param_, 

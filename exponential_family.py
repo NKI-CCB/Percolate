@@ -65,7 +65,13 @@ def expt_negative_binomial_reparametrized(data, saturated_params, params=None):
     # return torch.multiply(data, reparam_saturated_params)
 
     r = params['r']
-    reparam_saturated_params = torch.log(r) - torch.log(r + torch.exp(saturated_params))
+    reparam_saturated_params = torch.log(r + torch.exp(saturated_params))
+
+    # Correct difference
+    reparam_saturated_params_isinf = torch.isinf(reparam_saturated_params)
+    reparam_saturated_params[reparam_saturated_params_isinf] = saturated_params[reparam_saturated_params_isinf]
+    reparam_saturated_params = torch.log(r) - reparam_saturated_params
+
     return torch.multiply(data, reparam_saturated_params)
 
 def expt_beta_reparametrized(data, saturated_params, params=None):
@@ -141,10 +147,6 @@ def G_negative_binomial(x, params=None):
     # return - r * torch.log(1-torch.exp(x))
 
 def G_negative_binomial_reparametrized(x, params=None):
-    # r = params['r']
-    # # the saturated parameters need to be negative
-    # return r * torch.log((torch.exp(x) + r) / r)
-
     r = params['r']
     if r.shape[0] != x.shape[1]:
         r = r[params['gene_filter']]
@@ -451,7 +453,7 @@ def natural_parameter_log_likelihood(family, data, theta, params=None):
     partition = G_fun(family)(theta, params)
     return - exp_term + partition
 
-def make_saturated_loading_cost(family, max_value=np.inf, params=None):
+def make_saturated_loading_cost(family, max_value=np.inf, params=None, train=True):
     """
     Constructs the likelihood function for a given family.
     """
@@ -464,13 +466,14 @@ def make_saturated_loading_cost(family, max_value=np.inf, params=None):
 
         # Project saturated parameters
         eta = torch.matmul(parameters - intercept, torch.matmul(X, X.T)) + intercept
-        eta = eta.clip(-max_value, max_value)
-        
+        if not train:
+            eta = eta.clip(-max_value, max_value)
+
         # Compute the log-partition on projected parameters
         c = loss(eta, params)
         c = torch.sum(c)
 
-        # Second term (with potential parametrization)\
+        # Second term (with potential parametrization)
         d = exp_term_fun(data, eta, inner_params)
         d = torch.sum(d)
         return c - d
