@@ -56,9 +56,10 @@ def _create_saturated_loading_optim(
         train=True
     )
     # optimizer = moptim.ConjugateGradient(params = [loadings, intercept], lr=learning_rate)
-    # optimizer = moptim.rAdagrad(params = [loadings, intercept], lr=learning_rate)
+    optimizer = moptim.rAdagrad(params = [loadings, intercept], lr=learning_rate)
+    optimizer = moptim.rAdagrad(params = [loadings], lr=learning_rate)
     # optimizer = moptim.rASA(params=[loadings, intercept], lr=learning_rate)
-    optimizer = moptim.rASA(params=[loadings], lr=learning_rate)
+    # optimizer = moptim.rASA(params=[loadings], lr=learning_rate)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
     return optimizer, cost, loadings, intercept, lr_scheduler
