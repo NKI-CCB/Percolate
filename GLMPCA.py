@@ -24,11 +24,18 @@ def _create_saturated_loading_optim(
     parameters, data, n_pc, family, 
     learning_rate, max_value=np.inf, exp_family_params=None, step_size=20, gamma=0.5
     ):
-    loadings = mnn.Parameter(manifold=mnn.Stiefel(parameters.shape[1], n_pc))
-    intercept = mnn.Parameter(
-        data=torch.mean(parameters, axis=0),
-        manifold=mnn.Euclidean(parameters.shape[1])
+    
+    # Initialize loadings with spectrum
+    _,_,v = torch.linalg.svd(parameters - torch.mean(parameters, axis=0))
+    loadings = mnn.Parameter(
+        data=v[:n_pc,:].T,
+        manifold=mnn.Stiefel(parameters.shape[1], n_pc)
     )
+    # intercept = mnn.Parameter(
+    #     data=torch.mean(parameters, axis=0),
+    #     manifold=mnn.Euclidean(parameters.shape[1])
+    # )
+    intercept = torch.mean(parameters, axis=0)
     params = deepcopy(exp_family_params)
 
     # Load to GPU
@@ -48,7 +55,9 @@ def _create_saturated_loading_optim(
         train=True
     )
     # optimizer = moptim.ConjugateGradient(params = [loadings, intercept], lr=learning_rate)
-    optimizer = moptim.rAdagrad(params = [loadings, intercept], lr=learning_rate)
+    # optimizer = moptim.rAdagrad(params = [loadings, intercept], lr=learning_rate)
+    # optimizer = moptim.rASA(params=[loadings, intercept], lr=learning_rate)
+    optimizer = moptim.rASA(params=[loadings], lr=learning_rate)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
     return optimizer, cost, loadings, intercept, lr_scheduler
