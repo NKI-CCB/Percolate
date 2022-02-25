@@ -25,21 +25,22 @@ def _create_saturated_loading_optim(
     learning_rate, max_value=np.inf, exp_family_params=None, step_size=20, gamma=0.5
     ):
     
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
     # Initialize loadings with spectrum
     _,_,v = torch.linalg.svd(parameters - torch.mean(parameters, axis=0))
     loadings = mnn.Parameter(
-        data=v[:n_pc,:].T,
+        data=v[:n_pc,:].T.to(device),
         manifold=mnn.Stiefel(parameters.shape[1], n_pc)
     )
     # intercept = mnn.Parameter(
     #     data=torch.mean(parameters, axis=0),
     #     manifold=mnn.Euclidean(parameters.shape[1])
     # )
-    intercept = torch.mean(parameters, axis=0)
+    intercept = torch.mean(parameters, axis=0).to(device)
+    
     params = deepcopy(exp_family_params)
-
     # Load to GPU
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     if params is not None:
         params = {
             k:params[k].to(device) if type(params[k]) is torch.Tensor else params[k]
@@ -509,15 +510,6 @@ class GLMPCA:
                 saturated_param,
                 _intercept
             )
-            # _proj_params = saturated_param - _intercept
-            # _proj_params = _proj_params.matmul(_loadings).matmul(_loadings.T)
-            # _proj_params = _proj_params + _intercept
-            # _likelihood = torch.mean(natural_parameter_log_likelihood(
-            #     self.family, 
-            #     data.to(device), 
-            #     _proj_params.to(device), 
-            #     params=params
-            # ))
 
             return _loadings, _intercept, _likelihood
 
