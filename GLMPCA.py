@@ -44,7 +44,8 @@ def _create_saturated_loading_optim(
     cost = make_saturated_loading_cost(
         family=family,
         max_value=max_value, 
-        params=params
+        params=params,
+        train=True
     )
     # optimizer = moptim.ConjugateGradient(params = [loadings, intercept], lr=learning_rate)
     optimizer = moptim.rAdagrad(params = [loadings, intercept], lr=learning_rate)
@@ -131,7 +132,7 @@ class GLMPCA:
         self.learning_rate_ = self.initial_learning_rate_
         self.loadings_learning_scores_ = []
         self.loadings_learning_rates_ = []
-        
+
         if self.n_init == 1:
             self.saturated_loadings_, self.saturated_intercept_ = self._saturated_loading_iter(
                 self.saturated_param_, 
@@ -464,7 +465,7 @@ class GLMPCA:
 
             if np.isinf(self.loadings_learning_scores_[-1][-1]) or np.isnan(self.loadings_learning_scores_[-1][-1]):
                 print('\tRESTART BECAUSE INF/NAN FOUND', flush=True)
-                self.learning_rate_ = self.learning_rate_ * 0.75
+                self.learning_rate_ = self.learning_rate_ * self.gamma
                 self.loadings_learning_scores_ = self.loadings_learning_scores_[:-1]
                 self.loadings_learning_rates_ = self.loadings_learning_rates_[:-1]
 
@@ -490,15 +491,24 @@ class GLMPCA:
             if params is not None and self.family.lower() in ['negative_binomial', 'nb', 'negative_binomial_reparam', 'nb_rep']:
                 params['r'] = params['r'][self.exp_family_params['gene_filter']].to(device)
 
-            _proj_params = saturated_param - _intercept
-            _proj_params = _proj_params.matmul(_loadings).matmul(_loadings.T)
-            _proj_params = _proj_params + _intercept
-            _likelihood = torch.mean(natural_parameter_log_likelihood(
-                self.family, 
-                data.to(device), 
-                _proj_params.to(device), 
-                params=params
-            ))
+            projected_likelihood = make_saturated_loading_cost(
+                self.family, max_value=self.max_param, params=params, train=False
+            )
+            _likelihood = projected_likelihood(
+                _loadings,
+                data,
+                saturated_param,
+                _intercept
+            )
+            # _proj_params = saturated_param - _intercept
+            # _proj_params = _proj_params.matmul(_loadings).matmul(_loadings.T)
+            # _proj_params = _proj_params + _intercept
+            # _likelihood = torch.mean(natural_parameter_log_likelihood(
+            #     self.family, 
+            #     data.to(device), 
+            #     _proj_params.to(device), 
+            #     params=params
+            # ))
 
             return _loadings, _intercept, _likelihood
 
