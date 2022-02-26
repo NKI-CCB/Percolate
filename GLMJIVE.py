@@ -26,6 +26,8 @@ class GLMJIVE:
         learning_rates=None,
         batch_size=None, 
         n_glmpca_init=None,
+        step_size=None,
+        gamma=None,
         n_jobs=1
         ):
         """
@@ -46,6 +48,8 @@ class GLMJIVE:
         self.learning_rates = learning_rates if learning_rates is not None else {k:0.01 for k in n_factors}
         self.batch_size = batch_size if batch_size is not None else {k:128 for k in n_factors}
         self.n_glmpca_init = n_glmpca_init if n_glmpca_init is not None else {k:1 for k in n_factors}
+        self.step_size = step_size if step_size is not None else {k:20 for k in n_factors}
+        self.gamma = gamma if gamma is not None else {k:0.5 for k in n_factors}
         # self.with_intercept = with_intercept
 
         self.factor_models = {}
@@ -139,6 +143,8 @@ class GLMJIVE:
             maxiter=self.maxiter[data_type], 
             max_param=self.max_param[data_type],
             learning_rate=self.learning_rates[data_type],
+            step_size=self.step_size[data_type],
+            gamma=self.gamma[data_type],
             n_jobs=self.n_jobs
         )
 
@@ -464,7 +470,9 @@ class GLMJIVE:
             'max_param': self.max_param,
             'learning_rates': self.learning_rates,
             'batch_size': self.batch_size,
-            'n_glmpca_init': self.n_glmpca_init
+            'n_glmpca_init': self.n_glmpca_init,
+            'step_size': self.step_size,
+            'gamma': self.gamma,
         }       
         dump(GLMJIVE_params, open('%s/params.pkl'%(folder), 'wb'))
 
