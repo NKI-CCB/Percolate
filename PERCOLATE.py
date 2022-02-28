@@ -19,6 +19,8 @@ class PERCOLATE:
         learning_rates=None,
         batch_size=None, 
         n_glmpca_init=None,
+        gamma=None,
+        step_size=None,
         n_jobs=1,
         joint_estimation_n_iter=5
         ):
@@ -38,6 +40,8 @@ class PERCOLATE:
         self.learning_rates = learning_rates if learning_rates is not None else {k:0.01 for k in n_factors}
         self.batch_size = batch_size if batch_size is not None else {k:128 for k in n_factors}
         self.n_glmpca_init = n_glmpca_init if n_glmpca_init is not None else {k:1 for k in n_factors}
+        self.gamma = gamma if gamma is not None else {k:0.5 for k in n_factors}
+        self.step_size = step_size if step_size is not None else {k:20 for k in n_factors}
         self.joint_estimation_n_iter = joint_estimation_n_iter
 
         # For parallelization
@@ -159,6 +163,8 @@ class PERCOLATE:
             'maxiter' :self.maxiter[key],
             'batch_size': self.batch_size[key],
             'n_init': self.n_glmpca_init[key],
+            'step_size': self.step_size[key],
+            'gamma': self.gamma[key],
             'n_jobs': self.n_jobs,    
         }
 
@@ -176,6 +182,8 @@ class PERCOLATE:
             'learning_rates': self.learning_rates,
             'batch_size': self.batch_size, 
             'n_glmpca_init': self.n_glmpca_init,
+            'step_size': self.step_size,
+            'gamma': self.gamma,
             'n_jobs': self.n_jobs,
             'joint_estimation_n_iter': self.joint_estimation_n_iter
         }

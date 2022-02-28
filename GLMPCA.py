@@ -515,7 +515,7 @@ class GLMPCA:
             return _loadings, _intercept, _likelihood
 
         # Reinitialize learning rate
-        self.learning_rate_ = self.initial_learning_rate_
+        self.learning_rate_ = deepcopy(self.initial_learning_rate_)
         return _loadings, _intercept
 
 

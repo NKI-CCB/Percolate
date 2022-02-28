@@ -422,6 +422,7 @@ class GLMJIVE:
         self.permuted_M_svd_ = []
 
         for perm_idx in range(n_perm):
+
             # Permute data
             source_idx = np.arange(self.M_.shape[0])
             target_idx = np.arange(self.M_.shape[0])
@@ -429,29 +430,20 @@ class GLMJIVE:
             np.random.shuffle(target_idx)
 
             # Train instance
-            self.permuted_M_svd_.append(torch.cat([
-                self.orthogonal_scores[0][source_idx],
-                self.orthogonal_scores[1][target_idx]
-            ], axis=1))
-            self.permuted_M_svd_[-1] = torch.linalg.svd(self.permuted_M_svd_[-1])[1][0]
+            try:
+                self.permuted_M_svd_.append(torch.cat([
+                    self.orthogonal_scores[0][source_idx],
+                    self.orthogonal_scores[1][target_idx]
+                ], axis=1))
 
+                self.permuted_M_svd_[-1] = torch.linalg.svd(self.permuted_M_svd_[-1])[1][0]
+            except:
+                print('PERMUTED SVD DOES NOT RUN')
 
         self.permuted_M_svd_ = torch.Tensor(self.permuted_M_svd_)
         number_joint = torch.sum(torch.linalg.svd(self.M_)[1] > np.quantile(self.permuted_M_svd_, quantile_top_component))
         number_joint = number_joint.detach().cpu().numpy()
         return int(number_joint)
-
-        #     self.fit(perm_data, no_alignment=True)
-
-        #     # Save resulting M
-        #     self.permuted_M_.append(self.M_)
-        #     self.permuted_M_svd_.append(self.M_svd_)
-
-        # # Train instance
-        # self._train_glmpca_instances(X)
-        # self._aggregate_scores()
-
-        return True
 
 
     def clone_GLM_JIVE(self):
